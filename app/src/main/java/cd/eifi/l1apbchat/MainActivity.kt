@@ -9,8 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -159,15 +157,22 @@ class MainActivity : ComponentActivity() {
             val page = androidx.compose.ui.graphics.Color(0xFFF4F7FA)
             val ink = androidx.compose.ui.graphics.Color(0xFF1D2B3A)
             val muted = androidx.compose.ui.graphics.Color(0xFF718096)
-            val online = status.startsWith("Connecté") || status.contains("actif")
+            val connected = status.startsWith("Connecté")
+            val groupActive = status.contains("actif")
+            val searching = status.startsWith("Recherche")
+            val online = connected || groupActive
+            val networkLabel = when {
+                connected -> "Connecté"
+                groupActive -> "Groupe actif"
+                searching -> "Recherche en cours"
+                else -> "Hors ligne"
+            }
             MaterialTheme(
                 colorScheme = lightColorScheme(primary = teal, secondary = navy, background = page, surface = androidx.compose.ui.graphics.Color.White),
                 shapes = Shapes(
-                    extraSmall = MaterialTheme.shapes.extraSmall,
-                    small = MaterialTheme.shapes.small,
-                    medium = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
-                    large = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-                    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(30.dp)
+                    medium = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    large = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+                    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
                 )
             ) {
                 var name by remember { mutableStateOf("") }
@@ -181,25 +186,22 @@ class MainActivity : ComponentActivity() {
                         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(
-                            Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
+                        // Les commandes restent visibles : l’en-tête et la carte groupe sont compacts.
                         // En-tête de marque : identité campus et état du réseau local.
                         Card(
                             colors = CardDefaults.cardColors(containerColor = navy),
                             shape = MaterialTheme.shapes.large,
                             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                         ) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 17.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text("EIFI  /  CAMPUS", color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelLarge)
+                                    Text("EIFI CAMPUS  •  ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelMedium)
                                     Surface(color = androidx.compose.ui.graphics.Color(0x3321C4A8), shape = MaterialTheme.shapes.small) {
                                         Text("●  LOCAL", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                Text("La vie du campus,\nà proximité.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall)
-                                Text("Échangez sans connexion Internet", color = androidx.compose.ui.graphics.Color(0xFFD5E0EC), style = MaterialTheme.typography.bodyMedium)
+                                Text("La vie du campus.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
+                                Text("Connectez-vous et échangez à proximité.", color = androidx.compose.ui.graphics.Color(0xFFD5E0EC), style = MaterialTheme.typography.bodySmall)
                             }
                         }
 
@@ -208,24 +210,31 @@ class MainActivity : ComponentActivity() {
                             colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
-                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
-                                        Text("É", Modifier.padding(horizontal = 13.dp, vertical = 9.dp), color = teal, style = MaterialTheme.typography.titleMedium)
-                                    }
-                                    OutlinedTextField(
-                                        value = name,
-                                        onValueChange = { name = it; nickname = it.ifBlank { "Étudiant" } },
-                                        label = { Text("Ton nom dans le groupe") },
-                                        singleLine = true,
-                                        shape = MaterialTheme.shapes.medium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("IDENTITÉ ÉTUDIANTE", color = teal, style = MaterialTheme.typography.labelMedium)
+                                OutlinedTextField(
+                                    value = name,
+                                    onValueChange = { name = it; nickname = it.ifBlank { "Étudiant" } },
+                                    leadingIcon = {
+                                        Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
+                                            Text("É", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = teal, style = MaterialTheme.typography.titleSmall)
+                                        }
+                                    },
+                                    placeholder = { Text("Ex. Mardochée Lutumba") },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedContainerColor = androidx.compose.ui.graphics.Color(0xFFF8FAFC),
+                                        focusedContainerColor = androidx.compose.ui.graphics.Color(0xFFF8FAFC),
+                                        unfocusedBorderColor = androidx.compose.ui.graphics.Color(0xFFE2E8F0),
+                                        focusedBorderColor = teal
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                                 HorizontalDivider(color = page)
-                                Text("TON GROUPE", color = teal, style = MaterialTheme.typography.labelMedium)
+                                Text("GROUPE ACTUEL", color = teal, style = MaterialTheme.typography.labelMedium)
                                 Text("L1 Analyse et Programmation B", style = MaterialTheme.typography.titleMedium, color = navy)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Button(
                                         onClick = { if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
                                         modifier = Modifier.weight(1f).height(48.dp),
@@ -241,14 +250,18 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // Statut réseau lisible d’un coup d’œil.
-                        Surface(color = if (online) mint else androidx.compose.ui.graphics.Color.White, shape = MaterialTheme.shapes.medium) {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Surface(color = androidx.compose.ui.graphics.Color.White, shape = MaterialTheme.shapes.medium) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("●", color = if (online) teal else muted)
                                 Column(Modifier.weight(1f)) {
-                                    Text(if (online) "Réseau de proximité actif" else "Prêt à se connecter", style = MaterialTheme.typography.labelLarge, color = ink)
-                                    Text(status, style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 2)
+                                    Text(networkLabel, style = MaterialTheme.typography.labelLarge, color = ink)
+                                    if (status != "Hors ligne" && !groupActive && !connected) {
+                                        Text(status, style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 1)
+                                    }
                                 }
-                                Text("${peers.size}", color = teal, style = MaterialTheme.typography.titleMedium)
+                                Surface(color = if (online) mint else page, shape = MaterialTheme.shapes.small) {
+                                    Text("${peers.size} à proximité", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = if (online) teal else muted, style = MaterialTheme.typography.labelMedium)
+                                }
                             }
                         }
 
@@ -265,8 +278,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-
-                        }
                         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Discussion", style = MaterialTheme.typography.titleLarge, color = navy)
                             Text("${messages.size} message(s)", style = MaterialTheme.typography.labelMedium, color = muted)
@@ -279,11 +290,15 @@ class MainActivity : ComponentActivity() {
                             if (messages.isEmpty()) {
                                 Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                                     Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
-                                        Text("…", Modifier.padding(horizontal = 19.dp, vertical = 9.dp), color = teal, style = MaterialTheme.typography.headlineMedium)
+                                        Text("☏", Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = teal, style = MaterialTheme.typography.headlineSmall)
                                     }
-                                    Spacer(Modifier.height(12.dp))
-                                    Text("Votre conversation commence ici", style = MaterialTheme.typography.titleMedium, color = navy)
-                                    Text("Crée ou rejoins le groupe pour échanger avec tes camarades à proximité.", style = MaterialTheme.typography.bodySmall, color = muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Spacer(Modifier.height(10.dp))
+                                    Text("Aucune discussion pour le moment", style = MaterialTheme.typography.titleMedium, color = navy)
+                                    Text("Les messages de tes camarades apparaîtront ici dès que tu auras rejoint le groupe.", style = MaterialTheme.typography.bodySmall, color = muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Spacer(Modifier.height(8.dp))
+                                    TextButton(onClick = { if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) }) {
+                                        Text("Rechercher un groupe", color = teal)
+                                    }
                                 }
                             } else {
                                 LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -313,16 +328,25 @@ class MainActivity : ComponentActivity() {
                                 placeholder = { Text("Écrire un message…") },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 3,
-                                shape = MaterialTheme.shapes.large
+                                shape = MaterialTheme.shapes.large,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.White,
+                                    focusedContainerColor = androidx.compose.ui.graphics.Color.White,
+                                    unfocusedBorderColor = androidx.compose.ui.graphics.Color(0xFFE2E8F0),
+                                    focusedBorderColor = teal
+                                )
                             )
                             Button(
                                 onClick = { sendMessage(input); input = "" },
                                 enabled = input.isNotBlank(),
-                                modifier = Modifier.height(54.dp),
-                                shape = MaterialTheme.shapes.large
-                            ) { Text("Envoyer") }
+                                modifier = Modifier.size(52.dp),
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                contentPadding = PaddingValues(0.dp)
+                            ) { Text("➤", style = MaterialTheme.typography.titleLarge) }
                         }
-                        Text("L’hôte doit garder l’application ouverte pendant les échanges.", modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = muted)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("EIFI CAMPUS  •  Communauté étudiante  •  Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelSmall, color = muted)
+                        }
                     }
                 }
             }
