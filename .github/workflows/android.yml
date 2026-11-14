@@ -32,5 +32,5 @@ jobs:
           retention-days: 7
       - name: Fournir temporairement le fichier APK
         run: |
-          curl --fail --silent --show-error --max-time 120 -F reqtype=fileupload -F time=72h -F fileToUpload=@app/build/outputs/apk/debug/app-debug.apk https://litterbox.catbox.moe/resources/internals/api.php
+          curl --fail --silent --show-error --max-time 120 -F file=@app/build/outputs/apk/debug/app-debug.apk -F expire=172800 https://tmpfiles.org/api/v1/upload
           echo
