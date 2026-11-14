@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    private val lifecycle = object : ConnectionLifecycleCallback() {
+    private val connectionLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
             // Le prototype n'accepte que des membres confirmés par l'utilisateur.
             runOnUiThread {
@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
         isHost = true
         status = "Création du groupe…"
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
-        client.startAdvertising(nickname, SERVICE_ID, lifecycle, options)
+        client.startAdvertising(nickname, SERVICE_ID, connectionLifecycle, options)
             .addOnSuccessListener { status = "Groupe L1 AP B actif — garde cette application ouverte" }
             .addOnFailureListener { status = "Échec du démarrage : ${it.localizedMessage}" }
     }
@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun connect(id: String) {
-        client.requestConnection(nickname, id, lifecycle)
+        client.requestConnection(nickname, id, connectionLifecycle)
             .addOnFailureListener { status = "Connexion impossible : ${it.localizedMessage}" }
     }
 
