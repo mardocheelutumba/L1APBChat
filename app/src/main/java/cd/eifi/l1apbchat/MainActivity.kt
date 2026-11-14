@@ -23,7 +23,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
-private const val GROUP_NAME = "L1 AP B"
+private const val GROUP_NAME = "L1 Analyse et Programmation B"
 
 class MainActivity : ComponentActivity() {
     private val client by lazy { Nearby.getConnectionsClient(this) }
@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 android.app.AlertDialog.Builder(this@MainActivity)
                     .setTitle("Demande de connexion")
-                    .setMessage("${info.endpointName} veut rejoindre L1 AP B.")
+                    .setMessage("${info.endpointName} veut rejoindre le groupe $GROUP_NAME.")
                     .setNegativeButton("Refuser") { _, _ -> client.rejectConnection(id) }
                     .setPositiveButton("Accepter") { _, _ -> client.acceptConnection(id, payloadCallback) }
                     .show()
@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendSystemWelcome(endpointId: String) {
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "L1 AP B").put("text", "Bienvenue dans le groupe !")
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "EIFI").put("text", "Bienvenue dans $GROUP_NAME !")
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
     }
 
@@ -120,14 +120,14 @@ class MainActivity : ComponentActivity() {
         status = "Création du groupe…"
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startAdvertising(nickname, SERVICE_ID, connectionLifecycle, options)
-            .addOnSuccessListener { status = "Groupe L1 AP B actif — garde cette application ouverte" }
+            .addOnSuccessListener { status = "Groupe $GROUP_NAME actif — garde cette application ouverte" }
             .addOnFailureListener { status = "Échec du démarrage : ${it.localizedMessage}" }
     }
 
     private fun searchGroup() {
         if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
         isHost = false
-        status = "Recherche du groupe L1 AP B…"
+        status = "Recherche du groupe $GROUP_NAME…"
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(SERVICE_ID, discovery, options)
             .addOnFailureListener { status = "Échec de la recherche : ${it.localizedMessage}" }
@@ -151,40 +151,84 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            val navy = androidx.compose.ui.graphics.Color(0xFF10233F)
+            val teal = androidx.compose.ui.graphics.Color(0xFF1B9A91)
+            val page = androidx.compose.ui.graphics.Color(0xFFF3F6FA)
+            MaterialTheme(colorScheme = lightColorScheme(primary = teal, secondary = navy, background = page, surface = androidx.compose.ui.graphics.Color.White)) {
                 var name by remember { mutableStateOf("") }
                 var input by remember { mutableStateOf("") }
                 val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
                     if (results.values.all { it }) status = "Permissions accordées. Choisis créer ou rejoindre le groupe."
                     else status = "Certaines permissions sont refusées : la connexion hors ligne ne pourra pas démarrer."
                 }
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("L1 AP B – Tchat local", style = MaterialTheme.typography.headlineSmall)
-                        OutlinedTextField(value = name, onValueChange = { name = it; nickname = it.ifBlank { "Étudiant" } }, label = { Text("Ton nom") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) }) { Text("Créer le groupe") }
-                            OutlinedButton(onClick = { if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) }) { Text("Rechercher") }
+                Surface(Modifier.fillMaxSize(), color = page) {
+                    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Card(colors = CardDefaults.cardColors(containerColor = navy), shape = MaterialTheme.shapes.large) {
+                            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("EIFI  •  CAMPUS", color = androidx.compose.ui.graphics.Color(0xFF9EDDD6), style = MaterialTheme.typography.labelMedium)
+                                Text("Échanges de proximité", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall)
+                                Text("Messagerie locale — sans Internet", color = androidx.compose.ui.graphics.Color(0xFFD4DFEE), style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
-                        Text(status, style = MaterialTheme.typography.bodySmall)
-                        if (peers.isNotEmpty()) {
-                            Text("Appareils trouvés / connectés")
-                            peers.toList().forEach { (id, label) ->
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(label)
-                                    TextButton(onClick = { connect(id) }) { Text("Rejoindre") }
+                        Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                            Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("TON PROFIL", color = teal, style = MaterialTheme.typography.labelLarge)
+                                OutlinedTextField(value = name, onValueChange = { name = it; nickname = it.ifBlank { "Étudiant" } }, label = { Text("Ton nom") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                                Text("GROUPE ACTUEL", color = teal, style = MaterialTheme.typography.labelLarge)
+                                Text("L1 Analyse et Programmation B", style = MaterialTheme.typography.titleMedium, color = navy)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) }, modifier = Modifier.weight(1f)) { Text("Créer") }
+                                    OutlinedButton(onClick = { if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) }, modifier = Modifier.weight(1f)) { Text("Rechercher") }
                                 }
                             }
                         }
-                        HorizontalDivider()
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                            items(messages) { Text(it, Modifier.padding(vertical = 5.dp)) }
+                        Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                            Row(Modifier.fillMaxWidth().padding(13.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(if (status.startsWith("Connecté")) "●" else "○", color = if (status.startsWith("Connecté")) teal else androidx.compose.ui.graphics.Color.Gray)
+                                Column {
+                                    Text(if (status.startsWith("Connecté")) "Groupe connecté" else "État de la connexion", style = MaterialTheme.typography.titleSmall, color = navy)
+                                    Text(status, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = input, onValueChange = { input = it }, label = { Text("Message") }, modifier = Modifier.weight(1f))
-                            Button(onClick = { sendMessage(input); input = "" }) { Text("Envoyer") }
+                        if (peers.isNotEmpty()) {
+                            Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                    Text("Appareils à proximité", style = MaterialTheme.typography.titleSmall, color = navy)
+                                    peers.toList().forEach { (id, label) ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(label, Modifier.padding(top = 10.dp))
+                                            TextButton(onClick = { connect(id) }) { Text("Rejoindre") }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        Text("Prototype : garde l’application ouverte. Teste avec l’accord des membres.", style = MaterialTheme.typography.labelSmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Discussion", style = MaterialTheme.typography.titleMedium, color = navy)
+                            Text("${messages.size} message(s)", style = MaterialTheme.typography.labelMedium, color = teal)
+                        }
+                        Card(Modifier.weight(1f).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                            if (messages.isEmpty()) {
+                                Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.Center) {
+                                    Text("Bienvenue dans le groupe", style = MaterialTheme.typography.titleSmall, color = navy)
+                                    Text("Les messages apparaîtront ici quand vous serez connectés.", style = MaterialTheme.typography.bodySmall)
+                                }
+                            } else {
+                                LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(messages) { msg ->
+                                        Surface(color = androidx.compose.ui.graphics.Color(0xFFEAF4F3), shape = MaterialTheme.shapes.medium) {
+                                            Text(msg, Modifier.fillMaxWidth().padding(12.dp), color = navy)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = input, onValueChange = { input = it }, label = { Text("Écrire un message…") }, modifier = Modifier.weight(1f), maxLines = 3)
+                            Button(onClick = { sendMessage(input); input = "" }, modifier = Modifier.align(androidx.compose.ui.Alignment.CenterVertically)) { Text("Envoyer") }
+                        }
+                        Text("Prototype de test • l’hôte doit garder l’application ouverte", style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color.Gray)
                     }
                 }
             }
