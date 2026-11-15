@@ -37,7 +37,7 @@ private data class ChatMessage(val name: String, val text: String, val time: Lon
 class MainActivity : ComponentActivity() {
     private val client by lazy { Nearby.getConnectionsClient(this) }
     private val peers = mutableStateMapOf<String, String>() // nearby endpoint id -> display name
-    private val connectedPeers = mutableStateSetOf<String>()
+    private val connectedPeers = mutableStateListOf<String>()
     private val messages = mutableStateListOf<ChatMessage>()
     private var status by mutableStateOf("En attente d’une connexion locale")
     private var isHost = false
@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 if (result.status.isSuccess) {
                     if (isHost) peers[id] = peers[id] ?: "Membre connecté"
-                    connectedPeers.add(id)
+                    if (id !in connectedPeers) connectedPeers.add(id)
                     status = "Connecté à ${connectedPeers.size} appareil(s)"
                     if (isHost) sendSystemWelcome(id)
                 } else {
