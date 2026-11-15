@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -23,7 +25,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
-private const val GROUP_NAME = "L1 Analyse et Programmation B"
+private const val DEFAULT_GROUP = "Espace étudiant"
 
 class MainActivity : ComponentActivity() {
     private val client by lazy { Nearby.getConnectionsClient(this) }
@@ -31,7 +33,13 @@ class MainActivity : ComponentActivity() {
     private val messages = mutableStateListOf<String>()
     private var status by mutableStateOf("Hors ligne")
     private var isHost = false
-    private var nickname = "Étudiant"
+    private var nickname by mutableStateOf("Étudiant")
+    private val groupName = DEFAULT_GROUP
+    private var programName by mutableStateOf("L1 Analyse et Programmation B")
+    private var programCode by mutableStateOf("AP/B")
+    private val displayName: String get() = "${nickname.trim().ifBlank { "Étudiant" }} · $programCode"
+
+    private fun serviceIdFor(group: String) = SERVICE_ID
     private val receivedIds = mutableSetOf<String>()
 
     private fun requiredPermissions(): Array<String> {
@@ -57,7 +65,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 android.app.AlertDialog.Builder(this@MainActivity)
                     .setTitle("Demande de connexion")
-                    .setMessage("${info.endpointName} veut rejoindre le groupe $GROUP_NAME.")
+                    .setMessage("${info.endpointName} veut rejoindre le groupe $groupName.")
                     .setNegativeButton("Refuser") { _, _ -> client.rejectConnection(id) }
                     .setPositiveButton("Accepter") { _, _ -> client.acceptConnection(id, payloadCallback) }
                     .show()
@@ -110,7 +118,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendSystemWelcome(endpointId: String) {
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "EIFI").put("text", "Bienvenue dans $GROUP_NAME !")
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "EIFI").put("text", "Bienvenue dans $groupName !")
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
     }
 
@@ -119,37 +127,41 @@ class MainActivity : ComponentActivity() {
         isHost = true
         status = "Création du groupe…"
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
-        client.startAdvertising(nickname, SERVICE_ID, connectionLifecycle, options)
-            .addOnSuccessListener { status = "Groupe $GROUP_NAME actif — garde cette application ouverte" }
+        client.startAdvertising(displayName, serviceIdFor(groupName), connectionLifecycle, options)
+            .addOnSuccessListener { status = "Groupe $groupName actif — garde cette application ouverte" }
             .addOnFailureListener { status = "Échec du démarrage : ${it.localizedMessage}" }
     }
 
     private fun searchGroup() {
         if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
         isHost = false
-        status = "Recherche du groupe $GROUP_NAME…"
+        status = "Recherche du groupe $groupName…"
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
-        client.startDiscovery(SERVICE_ID, discovery, options)
+        client.startDiscovery(serviceIdFor(groupName), discovery, options)
             .addOnFailureListener { status = "Échec de la recherche : ${it.localizedMessage}" }
     }
 
     private fun connect(id: String) {
-        client.requestConnection(nickname, id, connectionLifecycle)
+        client.requestConnection(displayName, id, connectionLifecycle)
             .addOnFailureListener { status = "Connexion impossible : ${it.localizedMessage}" }
     }
 
     private fun sendMessage(text: String) {
         val clean = text.trim()
         if (clean.isEmpty()) return
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", nickname).put("text", clean)
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean)
         val bytes = Payload.fromBytes(obj.toString().toByteArray())
-        messages.add("Moi : $clean")
+        messages.add("$displayName: $clean")
         if (isHost) peers.keys.forEach { client.sendPayload(it, bytes) }
         else peers.keys.firstOrNull()?.let { client.sendPayload(it, bytes) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val profilePrefs = getSharedPreferences("student_profile", MODE_PRIVATE)
+        programName = profilePrefs.getString("filiere", "L1 Analyse et Programmation B") ?: "L1 Analyse et Programmation B"
+        programCode = profilePrefs.getString("filiere_code", "AP/B") ?: "AP/B"
+        nickname = profilePrefs.getString("name", "")?.ifBlank { "Étudiant" } ?: "Étudiant"
         setContent {
             val navy = androidx.compose.ui.graphics.Color(0xFF10233F)
             val teal = androidx.compose.ui.graphics.Color(0xFF16877F)
@@ -175,7 +187,7 @@ class MainActivity : ComponentActivity() {
                     extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
                 )
             ) {
-                var name by remember { mutableStateOf("") }
+                var name by remember { mutableStateOf(profilePrefs.getString("name", "") ?: "") }
                 var input by remember { mutableStateOf("") }
                 val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
                     if (results.values.all { it }) status = "Permissions accordées. Choisis créer ou rejoindre le groupe."
@@ -186,7 +198,8 @@ class MainActivity : ComponentActivity() {
                         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Les commandes restent visibles : l’en-tête et la carte groupe sont compacts.
+                        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Configuration défilante, clavier et barre d’envoi hors de cette zone.
                         // En-tête de marque : identité campus et état du réseau local.
                         Card(
                             colors = CardDefaults.cardColors(containerColor = navy),
@@ -195,13 +208,12 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text("EIFI CAMPUS  •  ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelMedium)
+                                    Text("ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelMedium)
                                     Surface(color = androidx.compose.ui.graphics.Color(0x3321C4A8), shape = MaterialTheme.shapes.small) {
                                         Text("●  LOCAL", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                Text("La vie du campus.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
-                                Text("Connectez-vous et échangez à proximité.", color = androidx.compose.ui.graphics.Color(0xFFD5E0EC), style = MaterialTheme.typography.bodySmall)
+                                Text("Connectez-vous et échangez à proximité.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
                             }
                         }
 
@@ -214,13 +226,17 @@ class MainActivity : ComponentActivity() {
                                 Text("IDENTITÉ ÉTUDIANTE", color = teal, style = MaterialTheme.typography.labelMedium)
                                 OutlinedTextField(
                                     value = name,
-                                    onValueChange = { name = it; nickname = it.ifBlank { "Étudiant" } },
+                                    onValueChange = {
+                                        name = it
+                                        nickname = it.ifBlank { "Étudiant" }
+                                        profilePrefs.edit().putString("name", it).apply()
+                                    },
                                     leadingIcon = {
                                         Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
                                             Text("É", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = teal, style = MaterialTheme.typography.titleSmall)
                                         }
                                     },
-                                    placeholder = { Text("Ex. Mardochée Lutumba") },
+                                    placeholder = { Text("Nlm") },
                                     singleLine = true,
                                     shape = MaterialTheme.shapes.medium,
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -232,8 +248,33 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 HorizontalDivider(color = page)
-                                Text("GROUPE ACTUEL", color = teal, style = MaterialTheme.typography.labelMedium)
-                                Text("L1 Analyse et Programmation B", style = MaterialTheme.typography.titleMedium, color = navy)
+                                Text("FILIÈRE", color = teal, style = MaterialTheme.typography.labelMedium)
+                                var filiereMenu by remember { mutableStateOf(false) }
+                                val filieres = listOf(
+                                    Triple("L1 Analyse et Programmation A", "AP/A", "AP/A"),
+                                    Triple("L1 Analyse et Programmation B", "AP/B", "AP/B"),
+                                    Triple("L1 Réseau C", "R/C", "R/C"),
+                                    Triple("L1 Réseau D", "R/D", "R/D")
+                                )
+                                val selectedFiliere = filieres.firstOrNull { it.first == programName } ?: filieres[1]
+                                Box {
+                                    OutlinedButton(onClick = { filiereMenu = true }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+                                        Text("${selectedFiliere.first}  ·  ${selectedFiliere.second}")
+                                    }
+                                    DropdownMenu(expanded = filiereMenu, onDismissRequest = { filiereMenu = false }) {
+                                        filieres.forEach { (label, abbreviation, code) ->
+                                            DropdownMenuItem(
+                                                text = { Text("$label  ·  $abbreviation") },
+                                                onClick = {
+                                                    programName = label
+                                                    programCode = code
+                                                    profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
+                                                    filiereMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Button(
                                         onClick = { if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
@@ -280,10 +321,10 @@ class MainActivity : ComponentActivity() {
                         }
                         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Discussion", style = MaterialTheme.typography.titleLarge, color = navy)
-                            Text("${messages.size} message(s)", style = MaterialTheme.typography.labelMedium, color = muted)
+                            Text("${messages.size} message${if (messages.size == 1) "" else "s"}", style = MaterialTheme.typography.labelMedium, color = muted)
                         }
                         Card(
-                            Modifier.weight(1f).fillMaxWidth(),
+                            Modifier.fillMaxWidth().heightIn(min = 180.dp),
                             colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
@@ -301,9 +342,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             } else {
-                                LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 360.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(messages) { msg ->
-                                        val mine = msg.startsWith("Moi : ")
+                                        val mine = msg.startsWith("$displayName: ")
                                         Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                                             Surface(
                                                 color = if (mine) teal else mint,
@@ -320,6 +361,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
+                        }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             OutlinedTextField(
@@ -345,7 +387,7 @@ class MainActivity : ComponentActivity() {
                             ) { Text("➤", style = MaterialTheme.typography.titleLarge) }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("EIFI CAMPUS  •  Communauté étudiante  •  Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelSmall, color = muted)
+                            Text("Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelSmall, color = muted)
                         }
                     }
                 }
