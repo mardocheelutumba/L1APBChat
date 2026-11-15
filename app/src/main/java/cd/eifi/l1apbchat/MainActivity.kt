@@ -28,6 +28,7 @@ import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
 import com.google.android.gms.tasks.Task
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.UUID
 
 private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
@@ -203,6 +204,24 @@ class MainActivity : ComponentActivity() {
                 var profileSaved by rememberSaveable { mutableStateOf(profilePrefs.getBoolean("profile_saved", false)) }
                 var input by remember { mutableStateOf("") }
                 var aboutOpen by rememberSaveable { mutableStateOf(false) }
+                var addFiliereDialog by rememberSaveable { mutableStateOf(false) }
+                var customFiliereName by rememberSaveable { mutableStateOf("") }
+                var customFiliereCode by rememberSaveable { mutableStateOf("") }
+                var filiereError by rememberSaveable { mutableStateOf("") }
+                val customFilieres = remember {
+                    mutableStateListOf<Triple<String, String, String>>().apply {
+                        val stored = profilePrefs.getString("custom_filieres", "[]") ?: "[]"
+                        try {
+                            val array = JSONArray(stored)
+                            for (i in 0 until array.length()) {
+                                val item = array.getJSONObject(i)
+                                val label = item.optString("name")
+                                val code = item.optString("code")
+                                if (label.isNotBlank() && code.isNotBlank()) add(Triple(label, code, code))
+                            }
+                        } catch (_: Exception) { }
+                    }
+                }
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val drawerScope = rememberCoroutineScope()
                 ModalNavigationDrawer(
@@ -289,7 +308,7 @@ class MainActivity : ComponentActivity() {
                                     Triple("L1 Analyse et Programmation B", "AP/B", "AP/B"),
                                     Triple("L1 Réseau C", "R/C", "R/C"),
                                     Triple("L1 Réseau D", "R/D", "R/D")
-                                )
+                                ) + customFilieres.toList()
                                 val selectedFiliere = filieres.firstOrNull { it.first == programName } ?: filieres[1]
                                 Box {
                                     OutlinedButton(onClick = { filiereMenu = true }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
@@ -307,7 +326,65 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             )
                                         }
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("+ Ajouter une filière") },
+                                            onClick = {
+                                                filiereMenu = false
+                                                customFiliereName = ""
+                                                customFiliereCode = ""
+                                                filiereError = ""
+                                                addFiliereDialog = true
+                                            }
+                                        )
                                     }
+                                }
+                                if (addFiliereDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = { addFiliereDialog = false },
+                                        title = { Text("Ajouter une filière") },
+                                        text = {
+                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                OutlinedTextField(
+                                                    value = customFiliereName,
+                                                    onValueChange = { customFiliereName = it },
+                                                    label = { Text("Nom de la filière") },
+                                                    singleLine = true
+                                                )
+                                                OutlinedTextField(
+                                                    value = customFiliereCode,
+                                                    onValueChange = { customFiliereCode = it },
+                                                    label = { Text("Abréviation (ex. AP/C)") },
+                                                    singleLine = true
+                                                )
+                                                if (filiereError.isNotBlank()) Text(filiereError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(
+                                                enabled = customFiliereName.isNotBlank() && customFiliereCode.isNotBlank(),
+                                                onClick = {
+                                                    val label = customFiliereName.trim()
+                                                    val code = customFiliereCode.trim()
+                                                    if (filieres.none { it.first.equals(label, true) || it.second.equals(code, true) }) {
+                                                        customFilieres.add(Triple(label, code, code))
+                                                        val array = JSONArray()
+                                                        customFilieres.forEach { item ->
+                                                            array.put(JSONObject().put("name", item.first).put("code", item.second))
+                                                        }
+                                                        profilePrefs.edit().putString("custom_filieres", array.toString()).apply()
+                                                        programName = label
+                                                        programCode = code
+                                                        profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
+                                                        addFiliereDialog = false
+                                                    } else {
+                                                        filiereError = "Ce nom ou cette abréviation existe déjà. Choisis une autre valeur."
+                                                    }
+                                                }
+                                            ) { Text("Ajouter") }
+                                        },
+                                        dismissButton = { TextButton(onClick = { addFiliereDialog = false }) { Text("Annuler") } }
+                                    )
                                 }
                                 Button(
                                     onClick = {
