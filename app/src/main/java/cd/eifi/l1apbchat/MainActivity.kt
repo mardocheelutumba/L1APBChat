@@ -14,6 +14,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,11 +32,12 @@ import java.util.UUID
 
 private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
 private const val DEFAULT_GROUP = "Espace étudiant"
+private data class ChatMessage(val name: String, val text: String, val time: Long, val mine: Boolean = false)
 
 class MainActivity : ComponentActivity() {
     private val client by lazy { Nearby.getConnectionsClient(this) }
     private val peers = mutableStateMapOf<String, String>() // endpoint id -> display name
-    private val messages = mutableStateListOf<String>()
+    private val messages = mutableStateListOf<ChatMessage>()
     private var status by mutableStateOf("Hors ligne")
     private var isHost = false
     private var nickname by mutableStateOf("Étudiant")
@@ -105,8 +112,12 @@ class MainActivity : ComponentActivity() {
                 val obj = JSONObject(raw)
                 val mid = obj.optString("id")
                 if (mid.isBlank() || !receivedIds.add(mid)) return
-                val text = "${obj.optString("name", "Étudiant")}: ${obj.optString("text", "")}" 
-                runOnUiThread { messages.add(text) }
+                val chatMessage = ChatMessage(
+                    name = obj.optString("name", "Étudiant"),
+                    text = obj.optString("text", ""),
+                    time = obj.optLong("time", System.currentTimeMillis())
+                )
+                runOnUiThread { messages.add(chatMessage) }
                 // Le téléphone hôte relaie le message du membre aux autres appareils.
                 if (isHost) {
                     val bytes = payload.asBytes() ?: return
@@ -149,9 +160,10 @@ class MainActivity : ComponentActivity() {
     private fun sendMessage(text: String) {
         val clean = text.trim()
         if (clean.isEmpty()) return
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean)
+        val sentAt = System.currentTimeMillis()
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean).put("time", sentAt)
         val bytes = Payload.fromBytes(obj.toString().toByteArray())
-        messages.add("$displayName: $clean")
+        messages.add(ChatMessage(displayName, clean, sentAt, mine = true))
         if (isHost) peers.keys.forEach { client.sendPayload(it, bytes) }
         else peers.keys.firstOrNull()?.let { client.sendPayload(it, bytes) }
     }
@@ -188,7 +200,30 @@ class MainActivity : ComponentActivity() {
                 )
             ) {
                 var name by remember { mutableStateOf(profilePrefs.getString("name", "") ?: "") }
+                var profileSaved by rememberSaveable { mutableStateOf(profilePrefs.getBoolean("profile_saved", false)) }
                 var input by remember { mutableStateOf("") }
+                var aboutOpen by rememberSaveable { mutableStateOf(false) }
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val drawerScope = rememberCoroutineScope()
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ModalDrawerSheet {
+                            Text("ESPACE ÉTUDIANT", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
+                            HorizontalDivider()
+                            NavigationDrawerItem(
+                                label = { Text("À propos") },
+                                selected = false,
+                                onClick = { aboutOpen = true; drawerScope.launch { drawerState.close() } }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Modifier mon profil") },
+                                selected = false,
+                                onClick = { profileSaved = false; profilePrefs.edit().putBoolean("profile_saved", false).apply(); drawerScope.launch { drawerState.close() } }
+                            )
+                        }
+                    }
+                ) {
                 val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
                     if (results.values.all { it }) status = "Permissions accordées. Choisis créer ou rejoindre le groupe."
                     else status = "Certaines permissions sont refusées : la connexion hors ligne ne pourra pas démarrer."
@@ -208,17 +243,22 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text("ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelMedium)
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(onClick = { drawerScope.launch { drawerState.open() } }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                            Text("☰", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
+                                        }
+                                        Text("ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
+                                    }
                                     Surface(color = androidx.compose.ui.graphics.Color(0x3321C4A8), shape = MaterialTheme.shapes.small) {
                                         Text("●  LOCAL", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                Text("Connectez-vous et échangez à proximité.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium)
+                                Text("Connectez-vous et échangez à proximité.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodySmall)
                             }
                         }
 
-                        // Carte de profil et de groupe, plus compacte pour laisser la place à la discussion.
-                        Card(
+                        // Le profil disparaît une fois enregistré ; possibilité de le modifier ensuite.
+                        if (!profileSaved) Card(
                             colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
@@ -231,11 +271,6 @@ class MainActivity : ComponentActivity() {
                                         nickname = it.ifBlank { "Étudiant" }
                                         profilePrefs.edit().putString("name", it).apply()
                                     },
-                                    leadingIcon = {
-                                        Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
-                                            Text("É", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = teal, style = MaterialTheme.typography.titleSmall)
-                                        }
-                                    },
                                     placeholder = { Text("Nlm") },
                                     singleLine = true,
                                     shape = MaterialTheme.shapes.medium,
@@ -247,7 +282,6 @@ class MainActivity : ComponentActivity() {
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                HorizontalDivider(color = page)
                                 Text("FILIÈRE", color = teal, style = MaterialTheme.typography.labelMedium)
                                 var filiereMenu by remember { mutableStateOf(false) }
                                 val filieres = listOf(
@@ -275,18 +309,39 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+                                Button(
+                                    onClick = {
+                                        val cleanName = name.trim()
+                                        if (cleanName.isNotEmpty()) {
+                                            nickname = cleanName
+                                            profilePrefs.edit().putString("name", cleanName).putBoolean("profile_saved", true).apply()
+                                            profileSaved = true
+                                        }
+                                    },
+                                    enabled = name.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = MaterialTheme.shapes.medium
+                                ) { Text("Enregistrer mon profil") }
+                            }
+                        }
+
+                        Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("FILIÈRE : $programCode", color = teal, style = MaterialTheme.typography.labelMedium)
+                                Text(programName, style = MaterialTheme.typography.titleSmall, color = navy)
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Button(
-                                        onClick = { if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
+                                        onClick = { if (!profileSaved) status = "Enregistre d’abord ton profil." else if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
                                         modifier = Modifier.weight(1f).height(48.dp),
                                         shape = MaterialTheme.shapes.medium
-                                    ) { Text("Créer un groupe") }
+                                    ) { Text("Créer une connexion") }
                                     OutlinedButton(
-                                        onClick = { if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
+                                        onClick = { if (!profileSaved) status = "Enregistre d’abord ton profil." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
                                         modifier = Modifier.weight(1f).height(48.dp),
                                         shape = MaterialTheme.shapes.medium
                                     ) { Text("Rechercher") }
                                 }
+                                if (!profileSaved) Text("Enregistre ton identité pour continuer.", style = MaterialTheme.typography.bodySmall, color = muted)
                             }
                         }
 
@@ -337,26 +392,28 @@ class MainActivity : ComponentActivity() {
                                     Text("Aucune discussion pour le moment", style = MaterialTheme.typography.titleMedium, color = navy)
                                     Text("Les messages de tes camarades apparaîtront ici dès que tu auras rejoint le groupe.", style = MaterialTheme.typography.bodySmall, color = muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                     Spacer(Modifier.height(8.dp))
-                                    TextButton(onClick = { if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) }) {
+                                    TextButton(onClick = { if (!profileSaved) status = "Enregistre d’abord ton profil." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) }) {
                                         Text("Rechercher un groupe", color = teal)
                                     }
                                 }
                             } else {
                                 LazyColumn(Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 360.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(messages) { msg ->
-                                        val mine = msg.startsWith("$displayName: ")
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                                        Column(Modifier.fillMaxWidth(), horizontalAlignment = if (msg.mine) androidx.compose.ui.Alignment.End else androidx.compose.ui.Alignment.Start) {
+                                            Text(msg.name, style = MaterialTheme.typography.labelSmall, color = muted, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
                                             Surface(
-                                                color = if (mine) teal else mint,
+                                                color = if (msg.mine) teal else mint,
                                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(
                                                     topStart = 18.dp, topEnd = 18.dp,
-                                                    bottomEnd = if (mine) 5.dp else 18.dp,
-                                                    bottomStart = if (mine) 18.dp else 5.dp
+                                                    bottomEnd = if (msg.mine) 5.dp else 18.dp,
+                                                    bottomStart = if (msg.mine) 18.dp else 5.dp
                                                 ),
                                                 modifier = Modifier.widthIn(max = 300.dp)
                                             ) {
-                                                Text(msg, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (mine) androidx.compose.ui.graphics.Color.White else navy)
+                                                Text(msg.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (msg.mine) androidx.compose.ui.graphics.Color.White else navy)
                                             }
+                                            val timeLabel = remember(msg.time) { SimpleDateFormat("dd/MM/yyyy · HH:mm", Locale.getDefault()).format(Date(msg.time)) }
+                                            Text(timeLabel, style = MaterialTheme.typography.labelSmall, color = muted, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
                                         }
                                     }
                                 }
@@ -390,6 +447,15 @@ class MainActivity : ComponentActivity() {
                             Text("Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelSmall, color = muted)
                         }
                     }
+                }
+                if (aboutOpen) {
+                    AlertDialog(
+                        onDismissRequest = { aboutOpen = false },
+                        confirmButton = { TextButton(onClick = { aboutOpen = false }) { Text("Fermer") } },
+                        title = { Text("À propos d’Espace Étudiant") },
+                        text = { Text("Cette application permet aux étudiants de se retrouver et d’échanger des messages à proximité sans Internet. Une personne crée une connexion et les autres la recherchent puis demandent à la rejoindre. Le téléphone hôte doit rester proche et garder l’application ouverte. Les profils sont enregistrés uniquement sur chaque téléphone. L’historique partagé, les messages privés, les vocaux et les appels ne sont pas encore disponibles dans cette version.") }
+                    )
+                }
                 }
             }
         }
