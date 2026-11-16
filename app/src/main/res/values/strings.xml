@@ -103,4 +103,6 @@
     <string name="access_code_wrong">Code incorrect. La connexion est fermée.</string>
     <string name="access_checking">Vérification du code…</string>
     <string name="access_code_ok">Code accepté. Salon rejoint.</string>
+    <string name="access_code_retry_hint">Entre le code correct du salon (4 chiffres).</string>
+    <string name="retry">Réessayer</string>
 </resources>
