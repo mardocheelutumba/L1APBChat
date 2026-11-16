@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +24,8 @@ import java.util.Locale
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.core.content.ContextCompat
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
@@ -205,6 +208,7 @@ class MainActivity : ComponentActivity() {
                 var name by remember { mutableStateOf(profilePrefs.getString("name", "") ?: "") }
                 var profileSaved by rememberSaveable { mutableStateOf(profilePrefs.getBoolean("profile_saved", false)) }
                 var input by remember { mutableStateOf("") }
+                val haptics = LocalHapticFeedback.current
                 var aboutOpen by rememberSaveable { mutableStateOf(false) }
                 var addFiliereDialog by rememberSaveable { mutableStateOf(false) }
                 var customFiliereName by rememberSaveable { mutableStateOf("") }
@@ -230,24 +234,42 @@ class MainActivity : ComponentActivity() {
                     drawerState = drawerState,
                     drawerContent = {
                         ModalDrawerSheet(drawerContainerColor = page) {
-                            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("ESPACE ÉTUDIANT", style = MaterialTheme.typography.titleMedium, color = navy)
-                                if (profileSaved) Text(displayName, style = MaterialTheme.typography.bodyMedium, color = ink)
+                            Column(
+                                Modifier.fillMaxWidth().background(navy).padding(horizontal = 20.dp, vertical = 22.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Surface(color = teal, shape = androidx.compose.foundation.shape.CircleShape, modifier = Modifier.size(52.dp)) {
+                                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                        Text((if (profileSaved) nickname.trim().firstOrNull() else name.trim().firstOrNull())?.uppercase() ?: "É", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall)
+                                    }
+                                }
+                                Text(if (profileSaved) nickname else "Bienvenue", style = MaterialTheme.typography.titleMedium, color = androidx.compose.ui.graphics.Color.White)
+                                Text(if (profileSaved) programCode else "Ton espace d’échange à proximité", style = MaterialTheme.typography.bodySmall, color = androidx.compose.ui.graphics.Color(0xFFD3E3F2))
                             }
                             HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE2E8F0))
                             NavigationDrawerItem(
-                                label = { Text("À propos") },
+                                label = { Text("Accueil") },
                                 selected = false,
-                                icon = { Text("ⓘ", color = teal) },
+                                icon = { Text("⌂", color = teal) },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                                 colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = page, unselectedTextColor = navy, unselectedIconColor = teal),
-                                onClick = { aboutOpen = true; drawerScope.launch { drawerState.close() } }
+                                onClick = { drawerScope.launch { drawerState.close() } }
                             )
                             NavigationDrawerItem(
                                 label = { Text(if (profileSaved) "Mon profil" else "Configurer mon profil") },
                                 selected = false,
                                 icon = { Text("●", color = teal) },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                                 colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = page, unselectedTextColor = navy, unselectedIconColor = teal),
                                 onClick = { profileSaved = false; profilePrefs.edit().putBoolean("profile_saved", false).apply(); drawerScope.launch { drawerState.close() } }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Aide et fonctionnement") },
+                                selected = false,
+                                icon = { Text("ⓘ", color = teal) },
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = page, unselectedTextColor = navy, unselectedIconColor = teal),
+                                onClick = { aboutOpen = true; drawerScope.launch { drawerState.close() } }
                             )
                         }
                     }
@@ -423,11 +445,17 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(if (isHost) "Tu héberges la connexion : reste à proximité." else "1. Crée une connexion sur un téléphone.  2. Recherche-la ici pour la rejoindre.", style = MaterialTheme.typography.bodySmall, color = ink)
                                 Button(
-                                    onClick = { if (!profileSaved) status = "Enregistre d’abord ton identité étudiante." else if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    onClick = {
+                                        if (!profileSaved) status = "Enregistre d’abord ton identité étudiante."
+                                        else {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions())
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                                ) { Text("Créer une connexion", maxLines = 1, style = MaterialTheme.typography.labelLarge) }
+                                ) { Text("◉   Créer une connexion", maxLines = 1, style = MaterialTheme.typography.titleSmall) }
                                 OutlinedButton(
                                     onClick = { if (!profileSaved) status = "Enregistre d’abord ton identité étudiante." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -443,12 +471,23 @@ class MainActivity : ComponentActivity() {
                                 Text("●", color = if (online) teal else ink)
                                 Column(Modifier.weight(1f)) {
                                     Text(networkLabel, style = MaterialTheme.typography.labelLarge, color = ink)
+                                    Text(
+                                        when {
+                                            connected -> "Échange local actif avec tes camarades."
+                                            groupActive -> "Ta connexion est prête à être recherchée à proximité."
+                                            searching -> "Recherche les connexions disponibles autour de toi."
+                                            else -> "Crée une connexion ou recherche celle d’un camarade."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = ink,
+                                        maxLines = 2
+                                    )
                                     if (status != "En attente d’une connexion locale" && !groupActive && !connected) {
-                                        Text(status, style = MaterialTheme.typography.bodySmall, color = ink, maxLines = 1)
+                                        Text(status, style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1)
                                     }
                                 }
                                 Surface(color = if (online) mint else page, shape = MaterialTheme.shapes.small) {
-                                    Text("${connectedPeers.size} connecté${if (connectedPeers.size == 1) "" else "s"}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = if (online) teal else ink, style = MaterialTheme.typography.labelLarge)
+                                    Text("${connectedPeers.size} connecté${if (connectedPeers.size == 1) "" else "s"}", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = if (online) teal else ink, style = MaterialTheme.typography.titleSmall)
                                 }
                             }
                         }
@@ -478,11 +517,11 @@ class MainActivity : ComponentActivity() {
                             if (messages.isEmpty()) {
                                 Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                                     Surface(color = mint, shape = androidx.compose.foundation.shape.CircleShape) {
-                                        Text("☏", Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = teal, style = MaterialTheme.typography.headlineSmall)
+                                        Text("✦", Modifier.padding(horizontal = 17.dp, vertical = 12.dp), color = teal, style = MaterialTheme.typography.headlineSmall)
                                     }
                                     Spacer(Modifier.height(10.dp))
-                                    Text("Aucune discussion pour le moment", style = MaterialTheme.typography.titleMedium, color = navy)
-                                    Text("Les messages de tes camarades apparaîtront ici dès que tu auras rejoint une connexion.", style = MaterialTheme.typography.bodySmall, color = ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Text("La discussion commence ici", style = MaterialTheme.typography.titleMedium, color = navy)
+                                    Text("Crée une connexion ou rejoins celle d’un camarade pour lancer les échanges.", style = MaterialTheme.typography.bodySmall, color = ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 }
                             } else {
                                 LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -540,7 +579,7 @@ class MainActivity : ComponentActivity() {
                             ) { Text("➤", style = MaterialTheme.typography.titleLarge) }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelLarge, color = ink)
+                            Text("●  Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelLarge, color = navy)
                         }
                     }
                 }
