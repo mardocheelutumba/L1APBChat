@@ -23,6 +23,9 @@ class HostConnectionService : Service() {
     private val client by lazy { Nearby.getConnectionsClient(this) }
     private val peers = linkedMapOf<String, String>()
     private val pending = linkedSetOf<String>()
+    private val awaitingApproval = linkedSetOf<String>()
+    private val joinNotificationIds = mutableMapOf<String, Int>()
+    private var nextJoinNotificationId = 7400
     private var displayName = "Participant"
     private var roomName = "Espace local"
     private var profileCode = ""
@@ -81,7 +84,15 @@ class HostConnectionService : Service() {
 
     private val lifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
-            pending.add(id)
+            awaitingApproval.add(id)
+            val notificationId = nextJoinNotificationId++
+            joinNotificationIds[id] = notificationId
+            authHandler.postDelayed({
+                if (awaitingApproval.remove(id)) {
+                    client.rejectConnection(id)
+                    dismissJoinNotification(id)
+                }
+            }, 60000)
             val accept = actionIntent(ACTION_ACCEPT, id, 1)
             val reject = actionIntent(ACTION_REJECT, id, 2)
             val n = NotificationCompat.Builder(this@HostConnectionService, CHANNEL_ID)
@@ -93,9 +104,11 @@ class HostConnectionService : Service() {
                 .addAction(0, getString(R.string.accept), accept)
                 .addAction(0, getString(R.string.reject), reject)
                 .build()
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID + 1, n)
+            getSystemService(NotificationManager::class.java).notify(notificationId, n)
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
+            awaitingApproval.remove(id)
+            dismissJoinNotification(id)
             if (result.status.isSuccess) {
                 if (android.os.SystemClock.elapsedRealtime() < lockedUntil) {
                     client.disconnectFromEndpoint(id)
@@ -123,6 +136,8 @@ class HostConnectionService : Service() {
             }
         }
         override fun onDisconnected(id: String) {
+            awaitingApproval.remove(id)
+            dismissJoinNotification(id)
             peers.remove(id)
             authenticatedPeers.remove(id)
             pending.remove(id)
@@ -196,13 +211,16 @@ class HostConnectionService : Service() {
         return mac.doFinal(nonce.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
     private fun constantTimeEquals(a: String, b: String): Boolean = java.security.MessageDigest.isEqual(a.toByteArray(), b.toByteArray())
+    private fun dismissJoinNotification(id: String) {
+        joinNotificationIds.remove(id)?.let { getSystemService(NotificationManager::class.java).cancel(it) }
+    }
     private fun accept(id: String) {
-        if (id.isNotBlank() && pending.remove(id)) client.acceptConnection(id, payloads)
-        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
+        if (id.isNotBlank() && awaitingApproval.remove(id)) client.acceptConnection(id, payloads)
+        dismissJoinNotification(id)
     }
     private fun reject(id: String) {
-        if (id.isNotBlank() && pending.remove(id)) client.rejectConnection(id)
-        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
+        if (id.isNotBlank() && awaitingApproval.remove(id)) client.rejectConnection(id)
+        dismissJoinNotification(id)
     }
     private fun relayFromHost(raw: String) {
         val bytes = raw.toByteArray(Charsets.UTF_8)
@@ -221,7 +239,9 @@ class HostConnectionService : Service() {
         sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName).putExtra(EXTRA_VALUE, value).putExtra(EXTRA_STATE, state))
     }
     private fun actionIntent(action: String, endpoint: String, requestCode: Int): PendingIntent {
-        val intent = Intent(this, HostConnectionService::class.java).setAction(action).putExtra(EXTRA_ENDPOINT, endpoint)
+        val intent = Intent(this, HostConnectionService::class.java).setAction(action)
+            .setData(android.net.Uri.Builder().scheme("localchat").authority("request").appendPath(action).appendPath(endpoint).build())
+            .putExtra(EXTRA_ENDPOINT, endpoint)
         return PendingIntent.getService(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
     }
     private fun notification(title: String, text: String): Notification {
@@ -241,11 +261,12 @@ class HostConnectionService : Service() {
     }
     override fun onDestroy() {
         authHandler.removeCallbacksAndMessages(null)
+        joinNotificationIds.values.forEach { getSystemService(NotificationManager::class.java).cancel(it) }
+        joinNotificationIds.clear(); awaitingApproval.clear()
         authenticatedPeers.clear(); pending.clear(); peers.clear(); authChallenges.clear(); authFailures.clear()
         client.stopAdvertising(); client.stopAllEndpoints()
         getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", false).apply()
         emitStatus(getString(R.string.host_status_closed), STATE_CLOSED)
-        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
         super.onDestroy()
     }
     companion object {
