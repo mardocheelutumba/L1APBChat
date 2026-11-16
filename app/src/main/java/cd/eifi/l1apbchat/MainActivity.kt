@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
             runOnUiThread {
                 if (result.status.isSuccess) {
-                    roomAuthenticated = isHost
+                    if (isHost) roomAuthenticated = true
                     if (isHost) peers[id] = peers[id] ?: getString(R.string.member_connected)
                     else status = getString(R.string.access_checking)
                     if (id !in connectedPeers) connectedPeers.add(id)
@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 peers.remove(id)
                 connectedPeers.remove(id)
+                if (!isHost) roomAuthenticated = false
                 if (connectedPeers.isEmpty()) {
                     status = getString(R.string.connection_interrupted)
                     if (!isHost) beginReconnect()
@@ -184,7 +185,7 @@ class MainActivity : ComponentActivity() {
                     "auth_required" -> {
                         val nonce = obj.optString("nonce")
                         if (nonce.isBlank()) return
-                        val proof = authProof(roomAccessCode, nonce)
+                        val proof = if (roomAccessCode.isEmpty()) "" else authProof(roomAccessCode, nonce)
                         val response = JSONObject().put("type", "auth").put("proof", proof)
                         client.sendPayload(id, Payload.fromBytes(response.toString().toByteArray()))
                         return
@@ -261,6 +262,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun connect(id: String) {
+        roomAuthenticated = false
         reconnecting = false
         reconnectConnectionPending = false
         reconnectTimeout?.let(reconnectHandler::removeCallbacks)
@@ -270,6 +272,7 @@ class MainActivity : ComponentActivity() {
 
     private fun beginReconnect() {
         if (isHost || lastHostName.isNullOrBlank() || reconnecting) return
+        roomAuthenticated = false
         reconnecting = true
         reconnectAttempt = 0
         runReconnectAttempt()
@@ -337,7 +340,7 @@ class MainActivity : ComponentActivity() {
             val mint = androidx.compose.ui.graphics.Color(0xFFEAF6F3)
             val page = androidx.compose.ui.graphics.Color(0xFFF4F7FA)
             val ink = androidx.compose.ui.graphics.Color(0xFF1D2B3A)
-            val connected = connectedPeers.isNotEmpty()
+            val connected = connectedPeers.isNotEmpty() && (isHost || roomAuthenticated)
             val groupActive = hostConnectionReady
             val searching = searchingForRoom
             val online = connected || groupActive
@@ -469,7 +472,7 @@ class MainActivity : ComponentActivity() {
                                 OutlinedTextField(
                                     value = roomAccessCode,
                                     onValueChange = { value ->
-                                        roomAccessCode = value.filter(Char::isDigit).take(4)
+                                        roomAccessCode = value.filter { it in '0'..'9' }.take(4)
                                         profilePrefs.edit().putString("room_access_code", roomAccessCode).apply()
                                     },
                                     label = { Text(getString(R.string.access_code_optional)) },
