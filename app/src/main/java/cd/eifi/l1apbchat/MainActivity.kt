@@ -8,6 +8,9 @@ import android.location.LocationManager
 import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
@@ -89,7 +92,12 @@ class MainActivity : ComponentActivity() {
 
     private val connectionLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
-            if (!isHost) {
+            val previouslySavedHost = lastHostName
+            if (!isHost && reconnecting && info.endpointName == previouslySavedHost) {
+                client.acceptConnection(id, payloadCallback)
+                return
+            }
+            if (!isHost && !reconnecting) {
                 lastHostName = info.endpointName
                 profilePreferences.edit().putString("last_host_name", info.endpointName).apply()
             }
@@ -185,11 +193,9 @@ class MainActivity : ComponentActivity() {
     private fun startHost() {
         if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
         isHost = true
+        profilePreferences.edit().putBoolean("host_active", true).apply()
         status = "Création du groupe…"
-        val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
-        client.startAdvertising(displayName, serviceIdFor(programName), connectionLifecycle, options)
-            .addOnSuccessListener { status = "Ta connexion est prête — garde l’application ouverte" }
-            .addOnFailureListener { status = "Échec du démarrage : ${it.localizedMessage}" }
+        HostConnectionService.start(this, displayName, programName, programCode)
     }
 
     private fun searchGroup() {
@@ -259,7 +265,7 @@ class MainActivity : ComponentActivity() {
         val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean).put("time", sentAt)
         val bytes = Payload.fromBytes(obj.toString().toByteArray())
         messages.add(ChatMessage(displayName, clean, sentAt, mine = true, delivery = "Envoi tenté"))
-        if (isHost) connectedPeers.forEach { client.sendPayload(it, bytes) }
+        if (isHost) HostConnectionService.send(this, obj.toString())
         else connectedPeers.firstOrNull()?.let { client.sendPayload(it, bytes) }
     }
 
@@ -348,6 +354,9 @@ class MainActivity : ComponentActivity() {
                 val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
                     if (results.values.all { it }) status = "Permissions accordées. Tu peux créer ou rechercher une connexion."
                     else status = "Certaines permissions sont refusées : la connexion hors ligne ne pourra pas démarrer."
+                }
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                    if (granted) startHost() else status = "Autorise les notifications pour garder visible la connexion ouverte."
                 }
                 Surface(Modifier.fillMaxSize(), color = page) {
                     Column(
@@ -516,7 +525,12 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(if (isHost) "Tu héberges la connexion : reste à proximité." else "1. Crée une connexion sur un téléphone.  2. Recherche-la ici pour la rejoindre.", style = MaterialTheme.typography.bodySmall, color = ink)
                                 Button(
-                                    onClick = { if (!profileSaved) status = "Enregistre d’abord ton identité étudiante." else if (hasPermissions()) startHost() else permissionLauncher.launch(requiredPermissions()) },
+                                    onClick = {
+                                        if (!profileSaved) status = "Enregistre d’abord ton identité étudiante."
+                                        else if (!hasPermissions()) permissionLauncher.launch(requiredPermissions())
+                                        else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        else startHost()
+                                    },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -684,10 +698,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val hostReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val value = intent.getStringExtra(HostConnectionService.EXTRA_VALUE).orEmpty()
+            when (intent.action) {
+                HostConnectionService.ACTION_STATUS -> {
+                    status = value
+                    if (value.contains("fermée") || value.contains("Échec de l’ouverture")) {
+                        isHost = false
+                        profilePreferences.edit().putBoolean("host_active", false).apply()
+                    }
+                }
+                HostConnectionService.ACTION_PEERS -> {
+                    val json = runCatching { JSONObject(value) }.getOrNull() ?: JSONObject()
+                    val count = json.optInt("count")
+                    val ids = json.optJSONArray("ids")
+                    connectedPeers.clear()
+                    if (ids != null) for (i in 0 until ids.length()) connectedPeers.add(ids.optString(i))
+                    else repeat(count) { connectedPeers.add("service-peer-$it") }
+                    if (count > 0) status = "Connecté à $count appareil(s)"
+                }
+                HostConnectionService.ACTION_MESSAGE -> runCatching {
+                    val obj = JSONObject(value)
+                    messages.add(ChatMessage(obj.optString("name", "Participant"), obj.optString("text", ""), obj.optLong("time", System.currentTimeMillis()), delivery = "Reçu"))
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter().apply {
+            addAction(HostConnectionService.ACTION_STATUS)
+            addAction(HostConnectionService.ACTION_PEERS)
+            addAction(HostConnectionService.ACTION_MESSAGE)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(hostReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(hostReceiver, filter)
+        isHost = getSharedPreferences("student_profile", MODE_PRIVATE).getBoolean("host_active", isHost)
+        if (isHost) startService(Intent(this, HostConnectionService::class.java).setAction(HostConnectionService.ACTION_QUERY))
+    }
+
+    override fun onStop() {
+        runCatching { unregisterReceiver(hostReceiver) }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         reconnectTimeout?.let(reconnectHandler::removeCallbacks)
         reconnectHandler.removeCallbacksAndMessages(null)
-        client.stopAdvertising(); client.stopDiscovery(); client.stopAllEndpoints()
+        if (!getSharedPreferences("student_profile", MODE_PRIVATE).getBoolean("host_active", false)) { client.stopAdvertising(); client.stopDiscovery(); client.stopAllEndpoints() }
         super.onDestroy()
     }
 }

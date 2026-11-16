@@ -46,6 +46,7 @@ class HostConnectionService : Service() {
         displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: displayName
         roomName = intent.getStringExtra(EXTRA_ROOM) ?: roomName
         profileCode = intent.getStringExtra(EXTRA_CODE).orEmpty()
+        getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", true).apply()
         createChannel()
         val notification = notification("Connexion ouverte", "Reste à proximité pour maintenir le salon.")
         if (Build.VERSION.SDK_INT >= 29) {
@@ -118,7 +119,11 @@ class HostConnectionService : Service() {
         peers.keys.forEach { client.sendPayload(it, Payload.fromBytes(bytes)) }
     }
 
-    private fun emitPeerState() = emit(ACTION_PEERS, JSONObject().put("count", peers.size).toString())
+    private fun emitPeerState(): Unit {
+        val ids = org.json.JSONArray()
+        peers.keys.forEach { ids.put(it) }
+        emit(ACTION_PEERS, JSONObject().put("count", peers.size).put("ids", ids).toString())
+    }
     private fun emit(action: String, value: String) {
         sendBroadcast(Intent(action).setPackage(packageName).putExtra(EXTRA_VALUE, value))
     }
@@ -143,6 +148,8 @@ class HostConnectionService : Service() {
     }
     override fun onDestroy() {
         client.stopAdvertising(); client.stopAllEndpoints()
+        getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", false).apply()
+        emit(ACTION_STATUS, "La connexion a été fermée.")
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
         super.onDestroy()
     }
