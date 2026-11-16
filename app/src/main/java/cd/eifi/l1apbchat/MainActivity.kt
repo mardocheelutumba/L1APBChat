@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity() {
                                 if (welcome != null) messages.add(ChatMessage(welcome.optString("name", getString(R.string.app_title)), welcome.optString("text", ""), welcome.optLong("time", System.currentTimeMillis()), delivery = getString(R.string.received)))
                             } else {
                                 awaitingCodeUpdate = true
-                                pendingAuthNonce = ""
+                                pendingAuthNonce = obj.optString("nonce")
                                 accessCodeInput = ""
                                 accessDialogOpen = true
                             }

@@ -156,8 +156,11 @@ class HostConnectionService : Service() {
                         authFailures.remove(id)
                         client.disconnectFromEndpoint(id)
                     } else {
-                        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_result").put("ok", false).toString().toByteArray()))
-                        sendChallenge(id)
+                        val nonce = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+                            .joinToString("") { "%02x".format(it) }
+                        authChallenges[id] = nonce
+                        val retry = JSONObject().put("type", "auth_result").put("ok", false).put("nonce", nonce)
+                        client.sendPayload(id, Payload.fromBytes(retry.toString().toByteArray()))
                     }
                 }
                 return
