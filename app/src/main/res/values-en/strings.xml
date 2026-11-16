@@ -96,4 +96,10 @@
     <string name="host_close_room">Close room</string>
     <string name="host_channel_name">Local connection</string>
     <string name="nearby_error">Nearby error</string>
+    <string name="access_code_optional">Room code (optional, 4 digits)</string>
+    <string name="access_code_hint">Leave blank for an open room</string>
+    <string name="access_code_length">Enter exactly 4 digits or leave this blank.</string>
+    <string name="access_code_wrong">Incorrect code. The connection is closing.</string>
+    <string name="access_checking">Checking room code…</string>
+    <string name="access_code_ok">Code accepted. Joined the room.</string>
 </resources>
