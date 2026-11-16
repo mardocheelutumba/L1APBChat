@@ -22,12 +22,19 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Construire l'APK debug
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug assembleRelease
       - name: Rendre l'APK téléchargeable
         uses: actions/upload-artifact@v4
         with:
           name: L1-AP-B-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Conserver l’APK release non signé
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-release-non-signee
+          path: app/build/outputs/apk/release/*-unsigned.apk
           if-no-files-found: error
           retention-days: 7
       - name: Fournir temporairement le fichier APK
