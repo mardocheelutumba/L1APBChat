@@ -85,4 +85,16 @@
     <string name="profile_prompt">Enregistre d’abord ton profil.</string>
     <string name="app_title">SALON LOCAL</string>
     <string name="room_welcome">Bienvenue dans %1$s !</string>
+    <string name="host_status_ready">Connexion prête — garde ce téléphone à proximité.</string>
+    <string name="host_status_failed">Échec de l’ouverture : %1$s</string>
+    <string name="host_status_connected">Connecté à %1$d participant(s).</string>
+    <string name="host_status_failed_generic">La demande n’a pas abouti.</string>
+    <string name="host_status_disconnected">Un participant s’est déconnecté.</string>
+    <string name="host_status_closed">La connexion a été fermée.</string>
+    <string name="host_notification_title">Connexion ouverte</string>
+    <string name="host_notification_text">Reste à proximité pour maintenir le salon.</string>
+    <string name="host_join_request">Demande pour rejoindre</string>
+    <string name="host_close_room">Fermer le salon</string>
+    <string name="host_channel_name">Connexion locale</string>
+    <string name="nearby_error">erreur Nearby</string>
 </resources>
