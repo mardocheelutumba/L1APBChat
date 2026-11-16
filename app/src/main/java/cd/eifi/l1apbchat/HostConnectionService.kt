@@ -82,7 +82,7 @@ class HostConnectionService : Service() {
                 peers[id] = "Participant connecté"
                 emitPeerState()
                 emitStatus(getString(R.string.host_status_connected, peers.size), STATE_ACTIVE)
-                val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "Espace Étudiant").put("text", "Bienvenue dans $roomName !").put("time", System.currentTimeMillis())
+                val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, roomName)).put("time", System.currentTimeMillis())
                 client.sendPayload(id, Payload.fromBytes(welcome.toString().toByteArray()))
             } else {
                 peers.remove(id)

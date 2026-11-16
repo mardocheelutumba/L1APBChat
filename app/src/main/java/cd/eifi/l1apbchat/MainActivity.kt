@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf("")
     private var isHost = false
     private var hostConnectionReady by mutableStateOf(false)
+    private var searchingForRoom by mutableStateOf(false)
     private var lastHostName: String? = null
     private var reconnecting = false
     private var reconnectAttempt = 0
@@ -123,6 +124,7 @@ class MainActivity : ComponentActivity() {
                 if (result.status.isSuccess) {
                     if (isHost) peers[id] = peers[id] ?: getString(R.string.member_connected)
                     if (id !in connectedPeers) connectedPeers.add(id)
+                    searchingForRoom = false
                     reconnecting = false
                     reconnectConnectionPending = false
                     reconnectAttempt = 0
@@ -151,6 +153,7 @@ class MainActivity : ComponentActivity() {
         override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) {
             peers[id] = info.endpointName
             if (reconnecting && !reconnectConnectionPending && connectedPeers.isEmpty() && info.endpointName == lastHostName) {
+                searchingForRoom = false
                 reconnectTimeout?.let(reconnectHandler::removeCallbacks)
                 client.stopDiscovery()
                 reconnectConnectionPending = true
@@ -193,7 +196,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendSystemWelcome(endpointId: String) {
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", "Bienvenue dans $programName !").put("time", System.currentTimeMillis())
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, programName)).put("time", System.currentTimeMillis())
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
     }
 
@@ -212,10 +215,11 @@ class MainActivity : ComponentActivity() {
         reconnectAttempt = 0
         if (!hasPermissions()) { status = getString(R.string.permission_prompt); return }
         isHost = false
+        searchingForRoom = true
         status = getString(R.string.search_room, programName)
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(serviceIdFor(programName), discovery, options)
-            .addOnFailureListener { status = getString(R.string.search_failed, it.localizedMessage ?: "") }
+            .addOnFailureListener { searchingForRoom = false; status = getString(R.string.search_failed, it.localizedMessage ?: "") }
     }
 
     private fun connect(id: String) {
@@ -237,10 +241,12 @@ class MainActivity : ComponentActivity() {
         if (!reconnecting || isHost || connectedPeers.isNotEmpty()) return
         if (reconnectAttempt >= 3) {
             reconnecting = false
+            searchingForRoom = false
             status = getString(R.string.host_not_found)
             return
         }
         reconnectAttempt++
+        searchingForRoom = true
         status = getString(R.string.reconnect_search, reconnectAttempt)
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(serviceIdFor(programName), discovery, options)
@@ -260,6 +266,7 @@ class MainActivity : ComponentActivity() {
         reconnectConnectionPending = false
         if (reconnectAttempt >= 3) {
             reconnecting = false
+            searchingForRoom = false
             status = getString(R.string.host_not_found)
         } else reconnectHandler.postDelayed({ runReconnectAttempt() }, 1_000)
     }
@@ -292,7 +299,7 @@ class MainActivity : ComponentActivity() {
             val ink = androidx.compose.ui.graphics.Color(0xFF1D2B3A)
             val connected = connectedPeers.isNotEmpty()
             val groupActive = hostConnectionReady
-            val searching = status.startsWith("Recherche") || status.startsWith("Searching")
+            val searching = searchingForRoom
             val online = connected || groupActive
             val networkLabel = when {
                 connected -> getString(R.string.status_connected)
