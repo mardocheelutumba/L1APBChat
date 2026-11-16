@@ -59,6 +59,10 @@ class MainActivity : ComponentActivity() {
     private var reconnectAttempt = 0
     private var roomAuthenticated by mutableStateOf(false)
     private var roomAccessCode by mutableStateOf("")
+    private var pendingAuthNonce by mutableStateOf("")
+    private var awaitingCodeUpdate by mutableStateOf(false)
+    private var accessDialogOpen by mutableStateOf(false)
+    private var accessCodeInput by mutableStateOf("")
     private var reconnectConnectionPending = false
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectTimeout: Runnable? = null
@@ -145,7 +149,11 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 peers.remove(id)
                 connectedPeers.remove(id)
-                if (!isHost) roomAuthenticated = false
+                if (!isHost) {
+                    roomAuthenticated = false
+                    awaitingCodeUpdate = false
+                    accessDialogOpen = false
+                }
                 if (connectedPeers.isEmpty()) {
                     status = getString(R.string.connection_interrupted)
                     if (!isHost) beginReconnect()
@@ -185,21 +193,30 @@ class MainActivity : ComponentActivity() {
                     "auth_required" -> {
                         val nonce = obj.optString("nonce")
                         if (nonce.isBlank()) return
-                        val proof = if (roomAccessCode.isEmpty()) "" else authProof(roomAccessCode, nonce)
-                        val response = JSONObject().put("type", "auth").put("proof", proof)
-                        client.sendPayload(id, Payload.fromBytes(response.toString().toByteArray()))
+                        if (awaitingCodeUpdate) {
+                            pendingAuthNonce = nonce
+                        } else {
+                            val proof = if (!obj.optBoolean("required", false)) "" else if (roomAccessCode.isEmpty()) "" else authProof(roomAccessCode, nonce)
+                            val response = JSONObject().put("type", "auth").put("proof", proof)
+                            client.sendPayload(id, Payload.fromBytes(response.toString().toByteArray()))
+                        }
                         return
                     }
                     "auth_result" -> {
                         val accepted = obj.optBoolean("ok", false)
+                        val welcome = obj.optJSONObject("welcome")
                         runOnUiThread {
                             roomAuthenticated = accepted
                             status = if (accepted) getString(R.string.access_code_ok) else getString(R.string.access_code_wrong)
-                            if (!accepted) {
-                                reconnecting = false
-                                lastHostName = null
-                                profilePreferences.edit().remove("last_host_name").apply()
-                                client.disconnectFromEndpoint(id)
+                            if (accepted) {
+                                awaitingCodeUpdate = false
+                                accessDialogOpen = false
+                                if (welcome != null) messages.add(ChatMessage(welcome.optString("name", getString(R.string.app_title)), welcome.optString("text", ""), welcome.optLong("time", System.currentTimeMillis()), delivery = getString(R.string.received)))
+                            } else {
+                                awaitingCodeUpdate = true
+                                pendingAuthNonce = ""
+                                accessCodeInput = ""
+                                accessDialogOpen = true
                             }
                         }
                         return
@@ -642,6 +659,47 @@ class MainActivity : ComponentActivity() {
                             Text(getString(R.string.stay_open), style = MaterialTheme.typography.labelLarge, color = ink)
                         }
                     }
+                }
+                if (accessDialogOpen) {
+                    AlertDialog(
+                        onDismissRequest = { },
+                        title = { Text(getString(R.string.access_code_wrong)) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(getString(R.string.access_code_retry_hint))
+                                OutlinedTextField(
+                                    value = accessCodeInput,
+                                    onValueChange = { accessCodeInput = it.filter { ch -> ch in '0'..'9' }.take(4) },
+                                    label = { Text(getString(R.string.access_code_optional)) },
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (accessCodeInput.length == 4 && pendingAuthNonce.isNotBlank()) {
+                                    roomAccessCode = accessCodeInput
+                                    profilePreferences.edit().putString("room_access_code", accessCodeInput).apply()
+                                    val proof = authProof(accessCodeInput, pendingAuthNonce)
+                                    val response = JSONObject().put("type", "auth").put("proof", proof)
+                                    connectedPeers.firstOrNull()?.let { client.sendPayload(it, Payload.fromBytes(response.toString().toByteArray())) }
+                                    pendingAuthNonce = ""
+                                    awaitingCodeUpdate = false
+                                    accessDialogOpen = false
+                                }
+                            }, enabled = accessCodeInput.length == 4 && pendingAuthNonce.isNotBlank()) { Text(getString(R.string.retry)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                connectedPeers.toList().forEach { client.disconnectFromEndpoint(it) }
+                                connectedPeers.clear()
+                                awaitingCodeUpdate = false
+                                accessDialogOpen = false
+                            }) { Text(getString(R.string.close)) }
+                        }
+                    )
                 }
                 if (diagnosticOpen) {
                     val missing = missingPermissions()

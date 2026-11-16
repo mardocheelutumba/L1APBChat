@@ -40,6 +40,16 @@ class HostConnectionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startHost(intent)
+            null -> {
+                val prefs = getSharedPreferences("student_profile", MODE_PRIVATE)
+                if (prefs.getBoolean("host_active", false)) {
+                    val restore = Intent().putExtra(EXTRA_DISPLAY_NAME, prefs.getString("name", "Participant"))
+                        .putExtra(EXTRA_ROOM, prefs.getString("room_name", "Espace local"))
+                        .putExtra(EXTRA_CODE, prefs.getString("room_note", ""))
+                        .putExtra(EXTRA_ACCESS_CODE, prefs.getString("room_access_code", ""))
+                    startHost(restore)
+                } else stopSelf(startId)
+            }
             ACTION_STOP -> stopSelf()
             ACTION_ACCEPT -> accept(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty())
             ACTION_REJECT -> reject(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty())
@@ -163,7 +173,7 @@ class HostConnectionService : Service() {
         val nonce = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
         authChallenges[id] = nonce
-        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_required").put("nonce", nonce).toString().toByteArray()))
+        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_required").put("nonce", nonce).put("required", accessCode.isNotBlank()).toString().toByteArray()))
     }
     private fun authenticate(id: String) {
         if (!pending.remove(id)) return
@@ -174,9 +184,8 @@ class HostConnectionService : Service() {
         peers[id] = "Participant connecté"
         emitPeerState()
         emitStatus(getString(R.string.host_status_connected, peers.size), STATE_ACTIVE)
-        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_result").put("ok", true).toString().toByteArray()))
         val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, roomName)).put("time", System.currentTimeMillis())
-        client.sendPayload(id, Payload.fromBytes(welcome.toString().toByteArray()))
+        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_result").put("ok", true).put("welcome", welcome).toString().toByteArray()))
     }
     private fun authProof(code: String, nonce: String): String {
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
