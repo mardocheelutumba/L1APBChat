@@ -97,4 +97,10 @@
     <string name="host_close_room">Fermer le salon</string>
     <string name="host_channel_name">Connexion locale</string>
     <string name="nearby_error">erreur Nearby</string>
+    <string name="access_code_optional">Code du salon (facultatif, 4 chiffres)</string>
+    <string name="access_code_hint">Laisser vide pour un salon ouvert</string>
+    <string name="access_code_length">Entre exactement 4 chiffres ou laisse le champ vide.</string>
+    <string name="access_code_wrong">Code incorrect. La connexion est fermée.</string>
+    <string name="access_checking">Vérification du code…</string>
+    <string name="access_code_ok">Code accepté. Salon rejoint.</string>
 </resources>
