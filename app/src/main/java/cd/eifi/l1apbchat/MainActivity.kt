@@ -2,12 +2,10 @@ package cd.eifi.l1apbchat
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.content.Intent
-import android.bluetooth.BluetoothManager
-import android.location.LocationManager
-import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.nearby.Nearby
-import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.nearby.connection.*
 import com.google.android.gms.tasks.Task
 import org.json.JSONObject
@@ -46,17 +43,16 @@ class MainActivity : ComponentActivity() {
     private val messages = mutableStateListOf<ChatMessage>()
     private var status by mutableStateOf("En attente d’une connexion locale")
     private var isHost = false
+    private var lastHostName: String? = null
+    private var reconnecting = false
+    private var reconnectAttempts = 0
+    private val reconnectHandler = Handler(Looper.getMainLooper())
+    private var reconnectTimeout: Runnable? = null
+    private val profilePreferences by lazy { getSharedPreferences("student_profile", MODE_PRIVATE) }
     private var nickname by mutableStateOf("Étudiant")
     private var programName by mutableStateOf("L1 Analyse et Programmation B")
     private var programCode by mutableStateOf("AP/B")
     private val displayName: String get() = "${nickname.trim().ifBlank { "Étudiant" }} · $programCode"
-    private fun bluetoothEnabled(): Boolean = try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true } catch (_: Exception) { false }
-    private fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) true else try {
-        val lm = getSystemService(LOCATION_SERVICE) as LocationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled else lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-    } catch (_: Exception) { false }
-    private fun playServicesAvailable(): Boolean = try { GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) == com.google.android.gms.common.ConnectionResult.SUCCESS } catch (_: Exception) { false }
-    private fun missingPermissions(): List<String> = requiredPermissions().filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
 
     private fun serviceIdFor(group: String) = SERVICE_ID
     private val receivedIds = mutableSetOf<String>()
@@ -80,6 +76,10 @@ class MainActivity : ComponentActivity() {
 
     private val connectionLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
+            if (!isHost) {
+                lastHostName = info.endpointName
+                profilePreferences.edit().putString("last_host_name", info.endpointName).apply()
+            }
             // Le prototype n'accepte que des membres confirmés par l'utilisateur.
             runOnUiThread {
                 android.app.AlertDialog.Builder(this@MainActivity)
@@ -95,11 +95,14 @@ class MainActivity : ComponentActivity() {
                 if (result.status.isSuccess) {
                     if (isHost) peers[id] = peers[id] ?: "Membre connecté"
                     if (id !in connectedPeers) connectedPeers.add(id)
+                    reconnecting = false
+                    reconnectAttempts = 0
+                    reconnectTimeout?.let(reconnectHandler::removeCallbacks)
                     status = "Connecté à ${connectedPeers.size} appareil(s)"
                     if (isHost) sendSystemWelcome(id)
                 } else {
                     peers.remove(id)
-                    status = "Connexion refusée ou interrompue"
+                    if (reconnecting) finishReconnectAttempt() else status = "Connexion refusée ou interrompue"
                 }
             }
         }
@@ -107,7 +110,10 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 peers.remove(id)
                 connectedPeers.remove(id)
-                status = if (connectedPeers.isEmpty()) "Connexion interrompue" else "Connecté à ${connectedPeers.size} appareil(s)"
+                if (connectedPeers.isEmpty()) {
+                    status = "Connexion interrompue"
+                    if (!isHost) beginReconnect()
+                } else status = "Connecté à ${connectedPeers.size} appareil(s)"
             }
         }
     }
@@ -115,6 +121,16 @@ class MainActivity : ComponentActivity() {
     private val discovery = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) {
             peers[id] = info.endpointName
+            if (reconnecting && info.endpointName == lastHostName && connectedPeers.isEmpty()) {
+                reconnecting = false
+                reconnectTimeout?.let(reconnectHandler::removeCallbacks)
+                client.stopDiscovery()
+                reconnecting = true
+                client.requestConnection(displayName, id, connectionLifecycle)
+                    .addOnFailureListener { finishReconnectAttempt() }
+                reconnectTimeout = Runnable { if (reconnecting && connectedPeers.isEmpty()) finishReconnectAttempt() }
+                reconnectHandler.postDelayed(reconnectTimeout!!, 8_000)
+            }
         }
         override fun onEndpointLost(id: String) { peers.remove(id) }
     }
@@ -159,6 +175,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun searchGroup() {
+        reconnecting = false
+        reconnectTimeout?.let(reconnectHandler::removeCallbacks)
+        reconnectAttempts = 0
         if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
         isHost = false
         status = "Recherche de la connexion $programCode…"
@@ -168,8 +187,49 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun connect(id: String) {
+        reconnecting = false
+        reconnectTimeout?.let(reconnectHandler::removeCallbacks)
         client.requestConnection(displayName, id, connectionLifecycle)
             .addOnFailureListener { status = "Connexion impossible : ${it.localizedMessage}" }
+    }
+
+    private fun beginReconnect() {
+        if (isHost || lastHostName.isNullOrBlank() || reconnecting) return
+        reconnecting = true
+        reconnectAttempts = 0
+        runReconnectAttempt()
+    }
+
+    private fun runReconnectAttempt() {
+        if (!reconnecting || isHost || connectedPeers.isNotEmpty()) return
+        if (reconnectAttempts >= 3) {
+            reconnecting = false
+            status = "Hôte introuvable après 3 essais. Recherche manuelle possible."
+            return
+        }
+        reconnectAttempts++
+        status = "Reconnexion : recherche de l’hôte (${reconnectAttempts}/3)…"
+        val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
+        client.startDiscovery(serviceIdFor(programName), discovery, options)
+            .addOnFailureListener { finishReconnectAttempt() }
+        reconnectTimeout = Runnable {
+            if (reconnecting && connectedPeers.isEmpty()) {
+                client.stopDiscovery()
+                finishReconnectAttempt()
+            }
+        }
+        reconnectHandler.postDelayed(reconnectTimeout!!, 8_000)
+    }
+
+    private fun finishReconnectAttempt() {
+        reconnectTimeout?.let(reconnectHandler::removeCallbacks)
+        if (!reconnecting || connectedPeers.isNotEmpty()) return
+        if (reconnectAttempts >= 3) {
+            reconnecting = false
+            status = "Hôte introuvable après 3 essais. Recherche manuelle possible."
+        } else {
+            reconnectHandler.postDelayed({ runReconnectAttempt() }, 1_000)
+        }
     }
 
     private fun sendMessage(text: String) {
@@ -190,6 +250,7 @@ class MainActivity : ComponentActivity() {
         programName = profilePrefs.getString("filiere", "L1 Analyse et Programmation B") ?: "L1 Analyse et Programmation B"
         programCode = profilePrefs.getString("filiere_code", "AP/B") ?: "AP/B"
         nickname = profilePrefs.getString("name", "")?.ifBlank { "Étudiant" } ?: "Étudiant"
+        lastHostName = profilePrefs.getString("last_host_name", null)
         setContent {
             val navy = androidx.compose.ui.graphics.Color(0xFF10233F)
             val teal = androidx.compose.ui.graphics.Color(0xFF16877F)
@@ -218,7 +279,6 @@ class MainActivity : ComponentActivity() {
                 var profileSaved by rememberSaveable { mutableStateOf(profilePrefs.getBoolean("profile_saved", false)) }
                 var input by remember { mutableStateOf("") }
                 var aboutOpen by rememberSaveable { mutableStateOf(false) }
-                var diagnosticOpen by rememberSaveable { mutableStateOf(false) }
                 var addFiliereDialog by rememberSaveable { mutableStateOf(false) }
                 var customFiliereName by rememberSaveable { mutableStateOf("") }
                 var customFiliereCode by rememberSaveable { mutableStateOf("") }
@@ -466,8 +526,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        TextButton(onClick = { diagnosticOpen = true }) { Text("Vérifier les conditions de connexion") }
-
                         if (peers.any { it.key !in connectedPeers }) {
                             Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
                                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -558,34 +616,6 @@ class MainActivity : ComponentActivity() {
                             Text("Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelLarge, color = ink)
                         }
                     }
-                }
-                if (diagnosticOpen) {
-                    val missing = missingPermissions()
-                    val btOk = bluetoothEnabled()
-                    val locationOk = locationEnabled()
-                    val playOk = playServicesAvailable()
-                    AlertDialog(
-                        containerColor = androidx.compose.ui.graphics.Color.White,
-                        onDismissRequest = { diagnosticOpen = false },
-                        title = { Text("Diagnostic de connexion") },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("${if (btOk) "✓" else "✗"} Bluetooth activé")
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) Text("${if (locationOk) "✓" else "✗"} Service de localisation activé (requis par Android 11 et antérieur)")
-                                Text("${if (missing.isEmpty()) "✓" else "✗"} Permissions des appareils à proximité${if (missing.isEmpty()) " accordées" else " manquantes"}")
-                                Text("${if (playOk) "✓" else "✗"} Google Play Services compatible")
-                                Text("Le diagnostic vérifie les prérequis visibles ; il ne garantit pas la détection ni la connexion. La compatibilité radio et les restrictions du téléphone peuvent aussi intervenir.", style = MaterialTheme.typography.bodySmall)
-                            }
-                        },
-                        confirmButton = {
-                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                                if (!btOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } }) { Text("Réglages Bluetooth") }
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && !locationOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } }) { Text("Activer la localisation") }
-                                if (missing.isNotEmpty()) TextButton(onClick = { diagnosticOpen = false; permissionLauncher.launch(missing.toTypedArray()) }) { Text("Autoriser les permissions") }
-                                TextButton(onClick = { diagnosticOpen = false }) { Text("Fermer") }
-                            }
-                        }
-                    )
                 }
                 if (aboutOpen) {
                     AlertDialog(
