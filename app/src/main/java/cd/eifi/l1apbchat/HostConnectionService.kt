@@ -53,7 +53,7 @@ class HostConnectionService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         } else startForeground(NOTIFICATION_ID, notification)
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
-        client.startAdvertising(displayName, SERVICE_ID, lifecycle, options)
+        client.startAdvertising(displayName, serviceIdFor(roomName), lifecycle, options)
             .addOnSuccessListener { emit(ACTION_STATUS, "Connexion prête — garde ce téléphone à proximité.") }
             .addOnFailureListener { emit(ACTION_STATUS, "Échec de l’ouverture : ${it.localizedMessage ?: "erreur Nearby"}") }
     }
@@ -154,16 +154,22 @@ class HostConnectionService : Service() {
         super.onDestroy()
     }
     companion object {
-        const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
-        const val ACTION_START = "cd.eifi.l1apbchat.HOST_START"
-        const val ACTION_STOP = "cd.eifi.l1apbchat.HOST_STOP"
-        const val ACTION_ACCEPT = "cd.eifi.l1apbchat.HOST_ACCEPT"
-        const val ACTION_REJECT = "cd.eifi.l1apbchat.HOST_REJECT"
-        const val ACTION_SEND = "cd.eifi.l1apbchat.HOST_SEND"
-        const val ACTION_QUERY = "cd.eifi.l1apbchat.HOST_QUERY"
-        const val ACTION_STATUS = "cd.eifi.l1apbchat.HOST_STATUS"
-        const val ACTION_PEERS = "cd.eifi.l1apbchat.HOST_PEERS"
-        const val ACTION_MESSAGE = "cd.eifi.l1apbchat.HOST_MESSAGE"
+        const val SERVICE_ID = "cd.localchat.app.localchat"
+        private fun serviceIdFor(room: String): String {
+            val normalized = room.trim().lowercase(java.util.Locale.ROOT).ifBlank { "salon ouvert" }
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+                .take(12).joinToString("") { "%02x".format(it) }
+            return "cd.localchat.app.r$hash"
+        }
+        const val ACTION_START = "cd.localchat.app.HOST_START"
+        const val ACTION_STOP = "cd.localchat.app.HOST_STOP"
+        const val ACTION_ACCEPT = "cd.localchat.app.HOST_ACCEPT"
+        const val ACTION_REJECT = "cd.localchat.app.HOST_REJECT"
+        const val ACTION_SEND = "cd.localchat.app.HOST_SEND"
+        const val ACTION_QUERY = "cd.localchat.app.HOST_QUERY"
+        const val ACTION_STATUS = "cd.localchat.app.HOST_STATUS"
+        const val ACTION_PEERS = "cd.localchat.app.HOST_PEERS"
+        const val ACTION_MESSAGE = "cd.localchat.app.HOST_MESSAGE"
         const val EXTRA_ENDPOINT = "endpoint"
         const val EXTRA_DISPLAY_NAME = "display_name"
         const val EXTRA_ROOM = "room_name"

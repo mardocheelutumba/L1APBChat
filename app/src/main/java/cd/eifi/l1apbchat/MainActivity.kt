@@ -41,7 +41,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.util.UUID
 
-private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
+private const val SERVICE_ID = "cd.localchat.app.localchat"
 private data class ChatMessage(val name: String, val text: String, val time: Long, val mine: Boolean = false, val delivery: String = "")
 
 class MainActivity : ComponentActivity() {
@@ -58,10 +58,10 @@ class MainActivity : ComponentActivity() {
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectTimeout: Runnable? = null
     private val profilePreferences by lazy { getSharedPreferences("student_profile", MODE_PRIVATE) }
-    private var nickname by mutableStateOf("Étudiant")
-    private var programName by mutableStateOf("L1 Analyse et Programmation B")
-    private var programCode by mutableStateOf("AP/B")
-    private val displayName: String get() = "${nickname.trim().ifBlank { "Étudiant" }} · $programCode"
+    private var nickname by mutableStateOf("Participant")
+    private var programName by mutableStateOf("Salon ouvert")
+    private var programCode by mutableStateOf("")
+    private val displayName: String get() = nickname.trim().ifBlank { "Participant" } + programCode.trim().takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
     private fun bluetoothEnabled(): Boolean = try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true } catch (_: Exception) { false }
     private fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) true else try {
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
@@ -70,7 +70,12 @@ class MainActivity : ComponentActivity() {
     private fun playServicesAvailable(): Boolean = try { GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) == com.google.android.gms.common.ConnectionResult.SUCCESS } catch (_: Exception) { false }
     private fun missingPermissions(): List<String> = requiredPermissions().filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
 
-    private fun serviceIdFor(group: String) = SERVICE_ID
+    private fun serviceIdFor(group: String): String {
+        val normalized = group.trim().lowercase(Locale.ROOT).ifBlank { "salon ouvert" }
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+            .take(12).joinToString("") { "%02x".format(it) }
+        return "cd.localchat.app.r$hash"
+    }
     private val receivedIds = mutableSetOf<String>()
 
     private fun requiredPermissions(): Array<String> {
@@ -105,7 +110,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 android.app.AlertDialog.Builder(this@MainActivity)
                     .setTitle("Demande de connexion")
-                    .setMessage("${info.endpointName} veut rejoindre ta connexion $programCode.")
+                    .setMessage("${info.endpointName} veut rejoindre le salon $programName.")
                     .setNegativeButton("Refuser") { _, _ -> client.rejectConnection(id) }
                     .setPositiveButton("Accepter") { _, _ -> client.acceptConnection(id, payloadCallback) }
                     .show()
@@ -169,7 +174,7 @@ class MainActivity : ComponentActivity() {
                 val mid = obj.optString("id")
                 if (mid.isBlank() || !receivedIds.add(mid)) return
                 val chatMessage = ChatMessage(
-                    name = obj.optString("name", "Étudiant"),
+                    name = obj.optString("name", "Participant"),
                     text = obj.optString("text", ""),
                     time = obj.optLong("time", System.currentTimeMillis()),
                     delivery = "Reçu"
@@ -186,7 +191,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendSystemWelcome(endpointId: String) {
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "ESPACE ÉTUDIANT").put("text", "Bienvenue dans $programName !").put("time", System.currentTimeMillis())
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "SALON LOCAL").put("text", "Bienvenue dans $programName !").put("time", System.currentTimeMillis())
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
     }
 
@@ -205,7 +210,7 @@ class MainActivity : ComponentActivity() {
         reconnectAttempt = 0
         if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
         isHost = false
-        status = "Recherche de la connexion $programCode…"
+        status = "Recherche du salon $programName…"
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(serviceIdFor(programName), discovery, options)
             .addOnFailureListener { status = "Échec de la recherche : ${it.localizedMessage}" }
@@ -272,9 +277,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val profilePrefs = getSharedPreferences("student_profile", MODE_PRIVATE)
-        programName = profilePrefs.getString("filiere", "L1 Analyse et Programmation B") ?: "L1 Analyse et Programmation B"
-        programCode = profilePrefs.getString("filiere_code", "AP/B") ?: "AP/B"
-        nickname = profilePrefs.getString("name", "")?.ifBlank { "Étudiant" } ?: "Étudiant"
+        programName = profilePrefs.getString("room_name", "Salon ouvert") ?: "Salon ouvert"
+        programCode = profilePrefs.getString("room_note", "") ?: ""
+        nickname = profilePrefs.getString("name", "")?.ifBlank { "Participant" } ?: "Participant"
         lastHostName = profilePrefs.getString("last_host_name", null)
         setContent {
             val navy = androidx.compose.ui.graphics.Color(0xFF10233F)
@@ -305,24 +310,6 @@ class MainActivity : ComponentActivity() {
                 var input by remember { mutableStateOf("") }
                 var aboutOpen by rememberSaveable { mutableStateOf(false) }
                 var diagnosticOpen by rememberSaveable { mutableStateOf(false) }
-                var addFiliereDialog by rememberSaveable { mutableStateOf(false) }
-                var customFiliereName by rememberSaveable { mutableStateOf("") }
-                var customFiliereCode by rememberSaveable { mutableStateOf("") }
-                var filiereError by rememberSaveable { mutableStateOf("") }
-                val customFilieres = remember {
-                    mutableStateListOf<Triple<String, String, String>>().apply {
-                        val stored = profilePrefs.getString("custom_filieres", "[]") ?: "[]"
-                        try {
-                            val array = JSONArray(stored)
-                            for (i in 0 until array.length()) {
-                                val item = array.getJSONObject(i)
-                                val label = item.optString("name")
-                                val code = item.optString("code")
-                                if (label.isNotBlank() && code.isNotBlank()) add(Triple(label, code, code))
-                            }
-                        } catch (_: Exception) { }
-                    }
-                }
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val drawerScope = rememberCoroutineScope()
                 ModalNavigationDrawer(
@@ -330,7 +317,7 @@ class MainActivity : ComponentActivity() {
                     drawerContent = {
                         ModalDrawerSheet(drawerContainerColor = page) {
                             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("ESPACE ÉTUDIANT", style = MaterialTheme.typography.titleMedium, color = navy)
+                                Text("SALON LOCAL", style = MaterialTheme.typography.titleMedium, color = navy)
                                 if (profileSaved) Text(displayName, style = MaterialTheme.typography.bodyMedium, color = ink)
                             }
                             HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE2E8F0))
@@ -368,7 +355,7 @@ class MainActivity : ComponentActivity() {
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                         // Configuration défilante, clavier et barre d’envoi hors de cette zone.
-                        // En-tête de marque : identité campus et état du réseau local.
+                        // En-tête de marque : profil et état du réseau local.
                         Card(
                             colors = CardDefaults.cardColors(containerColor = navy),
                             shape = MaterialTheme.shapes.large,
@@ -380,7 +367,7 @@ class MainActivity : ComponentActivity() {
                                         TextButton(onClick = { drawerScope.launch { drawerState.open() } }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
                                             Text("☰", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
                                         }
-                                        Text("ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f))
+                                        Text("SALON LOCAL", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f))
                                     }
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -398,12 +385,12 @@ class MainActivity : ComponentActivity() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("IDENTITÉ ÉTUDIANTE", color = teal, style = MaterialTheme.typography.labelMedium)
+                                Text("PROFIL", color = teal, style = MaterialTheme.typography.labelMedium)
                                 OutlinedTextField(
                                     value = name,
                                     onValueChange = {
                                         name = it
-                                        nickname = it.ifBlank { "Étudiant" }
+                                        nickname = it.ifBlank { "Participant" }
                                         profilePrefs.edit().putString("name", it).apply()
                                     },
                                     placeholder = { Text("Nlm") },
@@ -417,94 +404,30 @@ class MainActivity : ComponentActivity() {
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                Text("FILIÈRE", color = teal, style = MaterialTheme.typography.labelMedium)
-                                var filiereMenu by remember { mutableStateOf(false) }
-                                val filieres = listOf(
-                                    Triple("L1 Analyse et Programmation A", "AP/A", "AP/A"),
-                                    Triple("L1 Analyse et Programmation B", "AP/B", "AP/B"),
-                                    Triple("L1 Réseau C", "R/C", "R/C"),
-                                    Triple("L1 Réseau D", "R/D", "R/D")
-                                ) + customFilieres.toList()
-                                val selectedFiliere = filieres.firstOrNull { it.first == programName } ?: filieres[1]
-                                Box {
-                                    OutlinedButton(onClick = { filiereMenu = true }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
-                                        Text("${selectedFiliere.first}  ·  ${selectedFiliere.second}     ▾")
-                                    }
-                                    DropdownMenu(expanded = filiereMenu, onDismissRequest = { filiereMenu = false }) {
-                                        filieres.forEach { (label, abbreviation, code) ->
-                                            DropdownMenuItem(
-                                                text = { Text("$label  ·  $abbreviation") },
-                                                onClick = {
-                                                    programName = label
-                                                    programCode = code
-                                                    profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
-                                                    filiereMenu = false
-                                                }
-                                            )
-                                        }
-                                        HorizontalDivider()
-                                        DropdownMenuItem(
-                                            text = { Text("+ Ajouter une filière") },
-                                            onClick = {
-                                                filiereMenu = false
-                                                customFiliereName = ""
-                                                customFiliereCode = ""
-                                                filiereError = ""
-                                                addFiliereDialog = true
-                                            }
-                                        )
-                                    }
-                                }
-                                if (addFiliereDialog) {
-                                    AlertDialog(
-                                        containerColor = androidx.compose.ui.graphics.Color.White,
-                                        titleContentColor = navy,
-                                        textContentColor = ink,
-                                        onDismissRequest = { addFiliereDialog = false },
-                                        title = { Text("Ajouter une filière") },
-                                        text = {
-                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                OutlinedTextField(
-                                                    value = customFiliereName,
-                                                    onValueChange = { customFiliereName = it },
-                                                    label = { Text("Nom de la filière") },
-                                                    singleLine = true
-                                                )
-                                                OutlinedTextField(
-                                                    value = customFiliereCode,
-                                                    onValueChange = { customFiliereCode = it },
-                                                    label = { Text("Abréviation (ex. AP/C)") },
-                                                    singleLine = true
-                                                )
-                                                if (filiereError.isNotBlank()) Text(filiereError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                                            }
-                                        },
-                                        confirmButton = {
-                                            TextButton(
-                                                enabled = customFiliereName.isNotBlank() && customFiliereCode.isNotBlank(),
-                                                onClick = {
-                                                    val label = customFiliereName.trim()
-                                                    val code = customFiliereCode.trim()
-                                                    if (filieres.none { it.first.equals(label, true) || it.second.equals(code, true) }) {
-                                                        customFilieres.add(Triple(label, code, code))
-                                                        val array = JSONArray()
-                                                        customFilieres.forEach { item ->
-                                                            array.put(JSONObject().put("name", item.first).put("code", item.second))
-                                                        }
-                                                        profilePrefs.edit().putString("custom_filieres", array.toString()).apply()
-                                                        programName = label
-                                                        programCode = code
-                                                        profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
-                                                        addFiliereDialog = false
-                                                    } else {
-                                                        filiereError = "Ce nom ou cette abréviation existe déjà. Choisis une autre valeur."
-                                                    }
-                                                }
-                                            ) { Text("Ajouter") }
-                                        },
-                                        dismissButton = { TextButton(onClick = { addFiliereDialog = false }) { Text("Annuler") } }
-                                    )
-                                }
+                                Text("NOM DU SALON", color = teal, style = MaterialTheme.typography.labelMedium)
+                                OutlinedTextField(
+                                    value = programName,
+                                    onValueChange = {
+                                        programName = it
+                                        profilePrefs.edit().putString("room_name", it).apply()
+                                    },
+                                    placeholder = { Text("Ex. Groupe du quartier") },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = programCode,
+                                    onValueChange = {
+                                        programCode = it
+                                        profilePrefs.edit().putString("room_note", it).apply()
+                                    },
+                                    label = { Text("Organisation (facultatif)") },
+                                    placeholder = { Text("Ex. Club ou école") },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                                 Button(
                                     onClick = {
                                         val cleanName = name.trim()
@@ -526,7 +449,7 @@ class MainActivity : ComponentActivity() {
                                 Text(if (isHost) "Tu héberges la connexion : reste à proximité." else "1. Crée une connexion sur un téléphone.  2. Recherche-la ici pour la rejoindre.", style = MaterialTheme.typography.bodySmall, color = ink)
                                 Button(
                                     onClick = {
-                                        if (!profileSaved) status = "Enregistre d’abord ton identité étudiante."
+                                        if (!profileSaved) status = "Enregistre d’abord ton profil."
                                         else if (!hasPermissions()) permissionLauncher.launch(requiredPermissions())
                                         else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                         else startHost()
@@ -536,7 +459,7 @@ class MainActivity : ComponentActivity() {
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                                 ) { Text("Créer une connexion", maxLines = 1, style = MaterialTheme.typography.labelLarge) }
                                 OutlinedButton(
-                                    onClick = { if (!profileSaved) status = "Enregistre d’abord ton identité étudiante." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
+                                    onClick = { if (!profileSaved) status = "Enregistre d’abord ton profil." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -689,8 +612,8 @@ class MainActivity : ComponentActivity() {
                         textContentColor = ink,
                         onDismissRequest = { aboutOpen = false },
                         confirmButton = { TextButton(onClick = { aboutOpen = false }) { Text("Fermer") } },
-                        title = { Text("À propos d’Espace Étudiant") },
-                        text = { Text("Cette application permet aux étudiants de se retrouver et d’échanger des messages à proximité sans Internet. Pour démarrer, une personne crée une connexion ; les autres la recherchent et demandent à la rejoindre. L’hôte doit rester proche et garder l’application ouverte. Le profil et les filières ajoutées sont enregistrés sur chaque téléphone. L’historique partagé, les messages privés, les vocaux et les appels ne sont pas encore disponibles.") }
+                        title = { Text("À propos de Local Chat") },
+                        text = { Text("Cette application permet de créer un salon local et d’échanger à proximité sans Internet. Une personne ouvre le salon ; les autres le recherchent et demandent à le rejoindre. L’hôte doit rester proche. Le profil est enregistré sur le téléphone. Les salons protégés, l’historique durable, les messages privés, les vocaux et les appels ne sont pas encore disponibles.") }
                     )
                 }
                 }
