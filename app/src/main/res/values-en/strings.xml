@@ -84,4 +84,16 @@
     <string name="room_welcome">Welcome to %1$s!</string>
     <string name="today">Today</string>
     <string name="local_chat_intro">Connect and chat nearby.</string>
+    <string name="host_status_ready">Connection ready — keep this phone nearby.</string>
+    <string name="host_status_failed">Could not open connection: %1$s</string>
+    <string name="host_status_connected">Connected to %1$d participant(s).</string>
+    <string name="host_status_failed_generic">The connection request did not complete.</string>
+    <string name="host_status_disconnected">A participant disconnected.</string>
+    <string name="host_status_closed">The connection was closed.</string>
+    <string name="host_notification_title">Connection open</string>
+    <string name="host_notification_text">Stay nearby to keep the room active.</string>
+    <string name="host_join_request">Join request</string>
+    <string name="host_close_room">Close room</string>
+    <string name="host_channel_name">Local connection</string>
+    <string name="nearby_error">Nearby error</string>
 </resources>
