@@ -5,10 +5,10 @@ plugins {
 }
 
 android {
-    namespace = "cd.eifi.l1apbchat"
+    namespace = "cd.localchat.app"
     compileSdk = 35
     defaultConfig {
-        applicationId = "cd.eifi.l1apbchat"
+        applicationId = "cd.localchat.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
