@@ -1,5 +1,7 @@
 package cd.eifi.l1apbchat
 
+import cd.localchat.app.R
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
