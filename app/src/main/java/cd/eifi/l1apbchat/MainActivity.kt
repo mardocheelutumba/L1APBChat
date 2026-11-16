@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
     private var lastHostName: String? = null
     private var reconnecting = false
     private var reconnectAttempt = 0
+    private var roomAuthenticated by mutableStateOf(false)
+    private var roomAccessCode by mutableStateOf("")
     private var reconnectConnectionPending = false
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectTimeout: Runnable? = null
@@ -122,15 +124,17 @@ class MainActivity : ComponentActivity() {
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
             runOnUiThread {
                 if (result.status.isSuccess) {
+                    roomAuthenticated = isHost
                     if (isHost) peers[id] = peers[id] ?: getString(R.string.member_connected)
+                    else status = getString(R.string.access_checking)
                     if (id !in connectedPeers) connectedPeers.add(id)
                     searchingForRoom = false
                     reconnecting = false
                     reconnectConnectionPending = false
                     reconnectAttempt = 0
                     reconnectTimeout?.let(reconnectHandler::removeCallbacks)
-                    status = if (connectedPeers.size == 1) getString(R.string.connected_one, connectedPeers.size) else getString(R.string.connected_many, connectedPeers.size)
-                    if (isHost) sendSystemWelcome(id)
+                    status = if (isHost) getString(R.string.status_connected) else getString(R.string.access_checking)
+
                 } else {
                     peers.remove(id)
                     if (reconnecting) finishReconnectAttempt() else status = getString(R.string.connection_denied)
@@ -176,6 +180,31 @@ class MainActivity : ComponentActivity() {
             val raw = payload.asBytes()?.toString(Charsets.UTF_8) ?: return
             try {
                 val obj = JSONObject(raw)
+                when (obj.optString("type")) {
+                    "auth_required" -> {
+                        val nonce = obj.optString("nonce")
+                        if (nonce.isBlank()) return
+                        val proof = authProof(roomAccessCode, nonce)
+                        val response = JSONObject().put("type", "auth").put("proof", proof)
+                        client.sendPayload(id, Payload.fromBytes(response.toString().toByteArray()))
+                        return
+                    }
+                    "auth_result" -> {
+                        val accepted = obj.optBoolean("ok", false)
+                        runOnUiThread {
+                            roomAuthenticated = accepted
+                            status = if (accepted) getString(R.string.access_code_ok) else getString(R.string.access_code_wrong)
+                            if (!accepted) {
+                                reconnecting = false
+                                lastHostName = null
+                                profilePreferences.edit().remove("last_host_name").apply()
+                                client.disconnectFromEndpoint(id)
+                            }
+                        }
+                        return
+                    }
+                }
+                if (!roomAuthenticated) return
                 val mid = obj.optString("id")
                 if (mid.isBlank() || !receivedIds.add(mid)) return
                 val chatMessage = ChatMessage(
@@ -195,6 +224,12 @@ class MainActivity : ComponentActivity() {
         override fun onPayloadTransferUpdate(id: String, update: PayloadTransferUpdate) = Unit
     }
 
+    private fun authProof(code: String, nonce: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(code.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(nonce.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
     private fun sendSystemWelcome(endpointId: String) {
         val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, programName)).put("time", System.currentTimeMillis())
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
@@ -202,10 +237,12 @@ class MainActivity : ComponentActivity() {
 
     private fun startHost() {
         if (!hasPermissions()) { status = getString(R.string.permission_prompt); return }
+        if (roomAccessCode.isNotBlank() && roomAccessCode.length != 4) { status = getString(R.string.access_code_length); return }
         isHost = true
+        roomAuthenticated = true
         profilePreferences.edit().putBoolean("host_active", true).apply()
         status = getString(R.string.group_creating)
-        HostConnectionService.start(this, displayName, programName, programCode)
+        HostConnectionService.start(this, displayName, programName, programCode, roomAccessCode)
     }
 
     private fun searchGroup() {
@@ -215,6 +252,7 @@ class MainActivity : ComponentActivity() {
         reconnectAttempt = 0
         if (!hasPermissions()) { status = getString(R.string.permission_prompt); return }
         isHost = false
+        roomAuthenticated = false
         searchingForRoom = true
         status = getString(R.string.search_room, programName)
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
@@ -275,6 +313,7 @@ class MainActivity : ComponentActivity() {
         val clean = text.trim()
         if (clean.isEmpty()) return
         if (connectedPeers.isEmpty()) { status = getString(R.string.connect_before_send); return }
+        if (!roomAuthenticated) { status = getString(R.string.access_checking); return }
         val sentAt = System.currentTimeMillis()
         val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean).put("time", sentAt)
         val bytes = Payload.fromBytes(obj.toString().toByteArray())
@@ -289,6 +328,7 @@ class MainActivity : ComponentActivity() {
         val profilePrefs = getSharedPreferences("student_profile", MODE_PRIVATE)
         programName = profilePrefs.getString("room_name", "Salon ouvert") ?: "Salon ouvert"
         programCode = profilePrefs.getString("room_note", "") ?: ""
+        roomAccessCode = profilePrefs.getString("room_access_code", "") ?: ""
         nickname = profilePrefs.getString("name", "")?.ifBlank { getString(R.string.applicant) } ?: getString(R.string.applicant)
         lastHostName = profilePrefs.getString("last_host_name", null)
         setContent {
@@ -427,6 +467,20 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 OutlinedTextField(
+                                    value = roomAccessCode,
+                                    onValueChange = { value ->
+                                        roomAccessCode = value.filter(Char::isDigit).take(4)
+                                        profilePrefs.edit().putString("room_access_code", roomAccessCode).apply()
+                                    },
+                                    label = { Text(getString(R.string.access_code_optional)) },
+                                    placeholder = { Text(getString(R.string.access_code_hint)) },
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
                                     value = programCode,
                                     onValueChange = {
                                         programCode = it
@@ -447,7 +501,7 @@ class MainActivity : ComponentActivity() {
                                             profileSaved = true
                                         }
                                     },
-                                    enabled = name.isNotBlank(),
+                                    enabled = name.isNotBlank() && (roomAccessCode.isBlank() || roomAccessCode.length == 4),
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium
                                 ) { Text(getString(R.string.save_profile)) }
@@ -469,7 +523,7 @@ class MainActivity : ComponentActivity() {
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                                 ) { Text(getString(R.string.create_connection), maxLines = 1, style = MaterialTheme.typography.labelLarge) }
                                 OutlinedButton(
-                                    onClick = { if (!profileSaved) status = getString(R.string.profile_prompt) else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
+                                    onClick = { if (roomAccessCode.isNotBlank() && roomAccessCode.length != 4) status = getString(R.string.access_code_length) else if (!profileSaved) status = getString(R.string.profile_prompt) else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -575,7 +629,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Button(
                                 onClick = { if (connectedPeers.isNotEmpty()) { sendMessage(input); input = "" } else { status = getString(R.string.connect_before_send) } },
-                                enabled = input.isNotBlank(),
+                                enabled = input.isNotBlank() && roomAuthenticated,
                                 modifier = Modifier.size(52.dp),
                                 shape = androidx.compose.foundation.shape.CircleShape,
                                 contentPadding = PaddingValues(0.dp)
@@ -638,7 +692,7 @@ class MainActivity : ComponentActivity() {
                 HostConnectionService.ACTION_STATUS -> {
                     status = value
                     when (intent.getStringExtra(HostConnectionService.EXTRA_STATE)) {
-                        HostConnectionService.STATE_ACTIVE -> hostConnectionReady = true
+                        HostConnectionService.STATE_ACTIVE -> { hostConnectionReady = true; if (isHost) roomAuthenticated = true }
                         HostConnectionService.STATE_FAILED, HostConnectionService.STATE_CLOSED -> {
                             hostConnectionReady = false
                             isHost = false

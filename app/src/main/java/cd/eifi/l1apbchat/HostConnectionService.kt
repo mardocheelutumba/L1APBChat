@@ -26,6 +26,13 @@ class HostConnectionService : Service() {
     private var displayName = "Participant"
     private var roomName = "Espace local"
     private var profileCode = ""
+    private var accessCode = ""
+    private val authenticatedPeers = linkedSetOf<String>()
+    private val authChallenges = mutableMapOf<String, String>()
+    private val authFailures = mutableMapOf<String, Int>()
+    private var failuresInWindow = 0
+    private var lockedUntil = 0L
+    private val authHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var hostState = STATE_ACTIVE
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -49,6 +56,7 @@ class HostConnectionService : Service() {
         displayName = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: displayName
         roomName = intent.getStringExtra(EXTRA_ROOM) ?: roomName
         profileCode = intent.getStringExtra(EXTRA_CODE).orEmpty()
+        accessCode = intent.getStringExtra(EXTRA_ACCESS_CODE).orEmpty()
         getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", true).apply()
         createChannel()
         val notification = notification(getString(R.string.host_notification_title), getString(R.string.host_notification_text))
@@ -79,19 +87,37 @@ class HostConnectionService : Service() {
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
             if (result.status.isSuccess) {
-                peers[id] = "Participant connecté"
-                emitPeerState()
-                emitStatus(getString(R.string.host_status_connected, peers.size), STATE_ACTIVE)
-                val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, roomName)).put("time", System.currentTimeMillis())
-                client.sendPayload(id, Payload.fromBytes(welcome.toString().toByteArray()))
+                if (android.os.SystemClock.elapsedRealtime() < lockedUntil) {
+                    client.disconnectFromEndpoint(id)
+                    return
+                }
+                pending.add(id)
+                if (accessCode.isBlank()) authenticate(id) else {
+                    sendChallenge(id)
+                    authHandler.postDelayed({
+                        if (pending.remove(id)) {
+                            authChallenges.remove(id)
+                            authFailures.remove(id)
+                            client.disconnectFromEndpoint(id)
+                        }
+                    }, 30000)
+                }
             } else {
                 peers.remove(id)
+                pending.remove(id)
+                authenticatedPeers.remove(id)
+                authChallenges.remove(id)
+                authFailures.remove(id)
                 emitPeerState()
                 emitStatus(getString(R.string.host_status_failed_generic), STATE_ACTIVE)
             }
         }
         override fun onDisconnected(id: String) {
             peers.remove(id)
+            authenticatedPeers.remove(id)
+            pending.remove(id)
+            authChallenges.remove(id)
+            authFailures.remove(id)
             emitPeerState()
             emitStatus(getString(R.string.host_status_disconnected), STATE_ACTIVE)
         }
@@ -102,13 +128,62 @@ class HostConnectionService : Service() {
             val bytes = payload.asBytes() ?: return
             val raw = bytes.toString(Charsets.UTF_8)
             val obj = runCatching { JSONObject(raw) }.getOrNull() ?: return
-            if (obj.optString("id").isBlank()) return
+            if (obj.optString("type") == "auth") {
+                if (id !in pending) return
+                val nonce = authChallenges.remove(id) ?: return
+                val expected = authProof(accessCode, nonce)
+                val supplied = obj.optString("proof")
+                if (constantTimeEquals(expected, supplied)) authenticate(id) else {
+                    val attempts = (authFailures[id] ?: 0) + 1
+                    authFailures[id] = attempts
+                    failuresInWindow++
+                    if (failuresInWindow >= 3) {
+                        lockedUntil = android.os.SystemClock.elapsedRealtime() + 60000
+                        failuresInWindow = 0
+                    }
+                    if (attempts >= 3 || android.os.SystemClock.elapsedRealtime() < lockedUntil) {
+                        pending.remove(id)
+                        authFailures.remove(id)
+                        client.disconnectFromEndpoint(id)
+                    } else {
+                        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_result").put("ok", false).toString().toByteArray()))
+                        sendChallenge(id)
+                    }
+                }
+                return
+            }
+            if (id !in authenticatedPeers || obj.optString("id").isBlank()) return
             emit(ACTION_MESSAGE, raw)
-            peers.keys.filter { it != id }.forEach { client.sendPayload(it, Payload.fromBytes(bytes)) }
+            authenticatedPeers.filter { it != id }.forEach { client.sendPayload(it, Payload.fromBytes(bytes)) }
         }
         override fun onPayloadTransferUpdate(id: String, update: PayloadTransferUpdate) = Unit
     }
 
+    private fun sendChallenge(id: String) {
+        val nonce = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        authChallenges[id] = nonce
+        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_required").put("nonce", nonce).toString().toByteArray()))
+    }
+    private fun authenticate(id: String) {
+        if (!pending.remove(id)) return
+        authFailures.remove(id)
+        authChallenges.remove(id)
+        failuresInWindow = 0
+        authenticatedPeers.add(id)
+        peers[id] = "Participant connecté"
+        emitPeerState()
+        emitStatus(getString(R.string.host_status_connected, peers.size), STATE_ACTIVE)
+        client.sendPayload(id, Payload.fromBytes(JSONObject().put("type", "auth_result").put("ok", true).toString().toByteArray()))
+        val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, roomName)).put("time", System.currentTimeMillis())
+        client.sendPayload(id, Payload.fromBytes(welcome.toString().toByteArray()))
+    }
+    private fun authProof(code: String, nonce: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(code.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(nonce.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+    private fun constantTimeEquals(a: String, b: String): Boolean = java.security.MessageDigest.isEqual(a.toByteArray(), b.toByteArray())
     private fun accept(id: String) {
         if (id.isNotBlank() && pending.remove(id)) client.acceptConnection(id, payloads)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
@@ -119,12 +194,12 @@ class HostConnectionService : Service() {
     }
     private fun relayFromHost(raw: String) {
         val bytes = raw.toByteArray(Charsets.UTF_8)
-        peers.keys.forEach { client.sendPayload(it, Payload.fromBytes(bytes)) }
+        authenticatedPeers.forEach { client.sendPayload(it, Payload.fromBytes(bytes)) }
     }
 
     private fun emitPeerState(): Unit {
         val ids = org.json.JSONArray()
-        peers.keys.forEach { ids.put(it) }
+        authenticatedPeers.forEach { ids.put(it) }
         emit(ACTION_PEERS, JSONObject().put("count", peers.size).put("ids", ids).toString())
     }
     private fun emit(action: String, value: String) {
@@ -153,6 +228,8 @@ class HostConnectionService : Service() {
         }
     }
     override fun onDestroy() {
+        authHandler.removeCallbacksAndMessages(null)
+        authenticatedPeers.clear(); pending.clear(); peers.clear(); authChallenges.clear(); authFailures.clear()
         client.stopAdvertising(); client.stopAllEndpoints()
         getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", false).apply()
         emitStatus(getString(R.string.host_status_closed), STATE_CLOSED)
@@ -180,6 +257,7 @@ class HostConnectionService : Service() {
         const val EXTRA_DISPLAY_NAME = "display_name"
         const val EXTRA_ROOM = "room_name"
         const val EXTRA_CODE = "profile_code"
+        const val EXTRA_ACCESS_CODE = "access_code"
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_VALUE = "value"
         const val EXTRA_STATE = "state"
@@ -188,9 +266,9 @@ class HostConnectionService : Service() {
         const val STATE_CLOSED = "closed"
         private const val CHANNEL_ID = "host_connection"
         private const val NOTIFICATION_ID = 7301
-        fun start(context: android.content.Context, name: String, room: String, code: String) {
+        fun start(context: android.content.Context, name: String, room: String, code: String, accessCode: String) {
             val intent = Intent(context, HostConnectionService::class.java).setAction(ACTION_START)
-                .putExtra(EXTRA_DISPLAY_NAME, name).putExtra(EXTRA_ROOM, room).putExtra(EXTRA_CODE, code)
+                .putExtra(EXTRA_DISPLAY_NAME, name).putExtra(EXTRA_ROOM, room).putExtra(EXTRA_CODE, code).putExtra(EXTRA_ACCESS_CODE, accessCode)
             ContextCompat.startForegroundService(context, intent)
         }
         fun stop(context: android.content.Context) {
