@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private val messages = mutableStateListOf<ChatMessage>()
     private var status by mutableStateOf("")
     private var isHost = false
+    private var hostConnectionReady by mutableStateOf(false)
     private var lastHostName: String? = null
     private var reconnecting = false
     private var reconnectAttempt = 0
@@ -290,7 +291,7 @@ class MainActivity : ComponentActivity() {
             val page = androidx.compose.ui.graphics.Color(0xFFF4F7FA)
             val ink = androidx.compose.ui.graphics.Color(0xFF1D2B3A)
             val connected = connectedPeers.isNotEmpty()
-            val groupActive = status.contains("connexion est prête") || status.contains("groupe actif")
+            val groupActive = hostConnectionReady
             val searching = status.startsWith("Recherche") || status.startsWith("Searching")
             val online = connected || groupActive
             val networkLabel = when {
@@ -629,9 +630,13 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 HostConnectionService.ACTION_STATUS -> {
                     status = value
-                    if (value.contains("fermée") || value.contains("Échec de l’ouverture")) {
-                        isHost = false
-                        profilePreferences.edit().putBoolean("host_active", false).apply()
+                    when (intent.getStringExtra(HostConnectionService.EXTRA_STATE)) {
+                        HostConnectionService.STATE_ACTIVE -> hostConnectionReady = true
+                        HostConnectionService.STATE_FAILED, HostConnectionService.STATE_CLOSED -> {
+                            hostConnectionReady = false
+                            isHost = false
+                            profilePreferences.edit().putBoolean("host_active", false).apply()
+                        }
                     }
                 }
                 HostConnectionService.ACTION_PEERS -> {
@@ -660,7 +665,7 @@ class MainActivity : ComponentActivity() {
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(hostReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(hostReceiver, filter)
         isHost = getSharedPreferences("student_profile", MODE_PRIVATE).getBoolean("host_active", isHost)
-        if (isHost) startService(Intent(this, HostConnectionService::class.java).setAction(HostConnectionService.ACTION_QUERY))
+        if (isHost) { hostConnectionReady = true; startService(Intent(this, HostConnectionService::class.java).setAction(HostConnectionService.ACTION_QUERY)) }
     }
 
     override fun onStop() {

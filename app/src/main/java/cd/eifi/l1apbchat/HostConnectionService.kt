@@ -24,6 +24,7 @@ class HostConnectionService : Service() {
     private var displayName = "Participant"
     private var roomName = "Espace local"
     private var profileCode = ""
+    private var hostState = STATE_ACTIVE
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -35,7 +36,7 @@ class HostConnectionService : Service() {
             ACTION_REJECT -> reject(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty())
             ACTION_SEND -> relayFromHost(intent.getStringExtra(EXTRA_MESSAGE).orEmpty())
             ACTION_QUERY -> {
-                emit(ACTION_STATUS, if (peers.isEmpty()) "Ta connexion est prête — garde ce téléphone à proximité." else "Connecté à ${peers.size} appareil(s)")
+                emitStatus(getString(R.string.host_status_ready), hostState)
                 emitPeerState()
             }
         }
@@ -48,14 +49,14 @@ class HostConnectionService : Service() {
         profileCode = intent.getStringExtra(EXTRA_CODE).orEmpty()
         getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", true).apply()
         createChannel()
-        val notification = notification("Connexion ouverte", "Reste à proximité pour maintenir le salon.")
+        val notification = notification(getString(R.string.host_notification_title), getString(R.string.host_notification_text))
         if (Build.VERSION.SDK_INT >= 29) {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         } else startForeground(NOTIFICATION_ID, notification)
         val options = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startAdvertising(displayName, serviceIdFor(roomName), lifecycle, options)
-            .addOnSuccessListener { emit(ACTION_STATUS, "Connexion prête — garde ce téléphone à proximité.") }
-            .addOnFailureListener { emit(ACTION_STATUS, "Échec de l’ouverture : ${it.localizedMessage ?: "erreur Nearby"}") }
+            .addOnSuccessListener { hostState = STATE_ACTIVE; emitStatus(getString(R.string.host_status_ready), hostState) }
+            .addOnFailureListener { hostState = STATE_FAILED; getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", false).apply(); emitStatus(getString(R.string.host_status_failed, it.localizedMessage ?: getString(R.string.nearby_error)), hostState) }
     }
 
     private val lifecycle = object : ConnectionLifecycleCallback() {
@@ -65,12 +66,12 @@ class HostConnectionService : Service() {
             val reject = actionIntent(ACTION_REJECT, id, 2)
             val n = NotificationCompat.Builder(this@HostConnectionService, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_more)
-                .setContentTitle("Demande pour rejoindre")
+                .setContentTitle(getString(R.string.host_join_request))
                 .setContentText(info.endpointName)
                 .setCategory(NotificationCompat.CATEGORY_EVENT)
                 .setAutoCancel(true)
-                .addAction(0, "Accepter", accept)
-                .addAction(0, "Refuser", reject)
+                .addAction(0, getString(R.string.accept), accept)
+                .addAction(0, getString(R.string.reject), reject)
                 .build()
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID + 1, n)
         }
@@ -78,19 +79,19 @@ class HostConnectionService : Service() {
             if (result.status.isSuccess) {
                 peers[id] = "Participant connecté"
                 emitPeerState()
-                emit(ACTION_STATUS, "Connecté à ${peers.size} participant(s).")
+                emitStatus(getString(R.string.host_status_connected, peers.size), STATE_ACTIVE)
                 val welcome = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "Espace Étudiant").put("text", "Bienvenue dans $roomName !").put("time", System.currentTimeMillis())
                 client.sendPayload(id, Payload.fromBytes(welcome.toString().toByteArray()))
             } else {
                 peers.remove(id)
                 emitPeerState()
-                emit(ACTION_STATUS, "La demande n’a pas abouti.")
+                emitStatus(getString(R.string.host_status_failed_generic), STATE_ACTIVE)
             }
         }
         override fun onDisconnected(id: String) {
             peers.remove(id)
             emitPeerState()
-            emit(ACTION_STATUS, "Un participant s’est déconnecté.")
+            emitStatus(getString(R.string.host_status_disconnected), STATE_ACTIVE)
         }
     }
 
@@ -127,6 +128,9 @@ class HostConnectionService : Service() {
     private fun emit(action: String, value: String) {
         sendBroadcast(Intent(action).setPackage(packageName).putExtra(EXTRA_VALUE, value))
     }
+    private fun emitStatus(value: String, state: String) {
+        sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName).putExtra(EXTRA_VALUE, value).putExtra(EXTRA_STATE, state))
+    }
     private fun actionIntent(action: String, endpoint: String, requestCode: Int): PendingIntent {
         val intent = Intent(this, HostConnectionService::class.java).setAction(action).putExtra(EXTRA_ENDPOINT, endpoint)
         return PendingIntent.getService(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
@@ -138,18 +142,18 @@ class HostConnectionService : Service() {
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentTitle(title).setContentText(text).setContentIntent(open)
             .setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, "Fermer le salon", stop).build()
+            .addAction(0, getString(R.string.host_close_room), stop).build()
     }
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CHANNEL_ID, "Connexion locale", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.host_channel_name), NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
     override fun onDestroy() {
         client.stopAdvertising(); client.stopAllEndpoints()
         getSharedPreferences("student_profile", MODE_PRIVATE).edit().putBoolean("host_active", false).apply()
-        emit(ACTION_STATUS, "La connexion a été fermée.")
+        emitStatus(getString(R.string.host_status_closed), STATE_CLOSED)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID + 1)
         super.onDestroy()
     }
@@ -176,6 +180,10 @@ class HostConnectionService : Service() {
         const val EXTRA_CODE = "profile_code"
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_VALUE = "value"
+        const val EXTRA_STATE = "state"
+        const val STATE_ACTIVE = "active"
+        const val STATE_FAILED = "failed"
+        const val STATE_CLOSED = "closed"
         private const val CHANNEL_ID = "host_connection"
         private const val NOTIFICATION_ID = 7301
         fun start(context: android.content.Context, name: String, room: String, code: String) {
