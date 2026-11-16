@@ -141,7 +141,7 @@ class HostConnectionService : Service() {
             if (obj.optString("type") == "auth") {
                 if (id !in pending) return
                 val nonce = authChallenges.remove(id) ?: return
-                val expected = authProof(accessCode, nonce)
+                val expected = if (accessCode.isBlank()) "" else authProof(accessCode, nonce)
                 val supplied = obj.optString("proof")
                 if (constantTimeEquals(expected, supplied)) authenticate(id) else {
                     val attempts = (authFailures[id] ?: 0) + 1
