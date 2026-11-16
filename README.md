@@ -20,7 +20,8 @@ Une organisation peut être renseignée dans le profil, mais elle est facultativ
 - La connexion Nearby et la reconnexion automatique n’ont pas encore été validées en usage réel.
 - La reconnexion reconnaît actuellement l’hôte par son nom affiché, qui peut être dupliqué ou imité.
 - L’acceptation de la demande n’est pas une authentification forte.
-- Un code facultatif à quatre chiffres demande une preuve de connaissance après la connexion Nearby avant d’ajouter un participant ou de relayer ses messages. Ce code reste une simple barrière contre les entrées occasionnelles : quatre chiffres sont facilement devinables et ne constituent pas une sécurité forte. La reconnexion demande à nouveau le code. Cette fonction devra être testée sur plusieurs téléphones avant d’être considérée comme opérationnelle.
+- Le code facultatif à quatre chiffres est vérifié par défi-réponse HMAC avant l’admission d’un participant et le relais de ses messages. Après un code erroné, l’application permet de réessayer ; trois erreurs ferment la connexion. La reconnexion redemande le code.
+- Le code est conservé dans les préférences locales de l’application. Quatre chiffres sont faciles à deviner ; le mécanisme est une barrière informelle, pas une sécurité forte ni une protection contre un appareil compromis. La fonction est expérimentale et n’a pas été testée sur plusieurs téléphones.
 - L’historique est temporaire et n’est pas sauvegardé durablement.
 - Les messages privés, vocaux et les appels restent à développer.
 - Nearby Connections chiffre les transferts selon la documentation Google, mais cela ne remplace pas l’authentification, les tests de sécurité ni une architecture de production.
