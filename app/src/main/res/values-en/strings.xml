@@ -102,4 +102,6 @@
     <string name="access_code_wrong">Incorrect code. The connection is closing.</string>
     <string name="access_checking">Checking room code…</string>
     <string name="access_code_ok">Code accepted. Joined the room.</string>
+    <string name="access_code_retry_hint">Enter the correct room code (4 digits).</string>
+    <string name="retry">Try again</string>
 </resources>
