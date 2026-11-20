@@ -1,0 +1,13 @@
+{
+  "name": "local-chat-firestore-rules-tests",
+  "private": true,
+  "description": "Emulator tests for the deny-by-default Firestore rules used by the experimental Android chat.",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-local-chat-hybride-rules \"node --test tests/firestore.rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.29.2"
+  }
+}
