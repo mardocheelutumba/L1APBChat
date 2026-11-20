@@ -22,7 +22,17 @@ Une organisation peut être renseignée dans le profil, mais elle est facultativ
 - L’acceptation de la demande n’est pas une authentification forte.
 - Le code facultatif à quatre chiffres est vérifié par défi-réponse HMAC avant l’admission d’un participant et le relais de ses messages. Après un code erroné, l’application permet de réessayer ; trois erreurs ferment la connexion. La reconnexion redemande le code.
 - Le code est conservé dans les préférences locales de l’application. Quatre chiffres sont faciles à deviner ; le mécanisme est une barrière informelle, pas une sécurité forte ni une protection contre un appareil compromis. La fonction est expérimentale et n’a pas été testée sur plusieurs téléphones.
-- L’historique est temporaire et n’est pas sauvegardé durablement.
+
+
+## Branche expérimentale hybride (en cours)
+
+Cette branche prépare une future option en ligne sans remplacer le transport Nearby existant. Le transport en ligne reste **désactivé** dans l’application : Firebase Authentication n’est pas intégré, aucune lecture/écriture Firestore n’est effectuée par le client et aucun message n’est envoyé vers le cloud. L’historique Nearby reste temporaire et séparé.
+
+Un fichier `firestore.rules` de référence bloque toute lecture et écriture (`allow read, write: if false`). Il est uniquement dans le dépôt : il n’a pas été déployé sur Firebase. Le projet Firebase `local-chat-hybride` conserve ses règles deny-all vérifiées. Il ne faut pas les remplacer avant d’implémenter une identité fiable, une appartenance explicite à chaque salon, la validation côté serveur des données et des tests positifs/négatifs avec l’émulateur Firebase Rules.
+
+Ne pas coller de clé de compte de service, jeton, secret ou fichier privé `google-services.json` dans le dépôt. Un fichier de configuration Android Firebase ne constitue pas un contrôle d’accès : les règles Firestore doivent protéger chaque document. Aucun abonnement payant ni chiffrement de bout en bout n’est déclaré ou supposé.
+
+État de l’expérimentation : seule une frontière d’architecture hors ligne/en ligne et une référence de règles fermées sont ajoutées ; l’authentification, la gestion des salons en ligne et la persistance cloud restent à réaliser et tester avant d’activer un mode en ligne.- L’historique est temporaire et n’est pas sauvegardé durablement.
 - Les messages privés, vocaux et les appels restent à développer.
 - Nearby Connections chiffre les transferts selon la documentation Google, mais cela ne remplace pas l’authentification, les tests de sécurité ni une architecture de production.
 - L’application requiert des services Google Play compatibles.
