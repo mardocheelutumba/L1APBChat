@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f2eb">
+  <meta name="description" content="Un projet de messagerie hybride : échanges locaux Android et une expérience web en préparation, avec un état d’avancement transparent.">
+  <title>Local Chat — messagerie, sans promesse cachée</title>
+  <style>
+    :root{color-scheme:light;--paper:#f5f2eb;--white:#fffefa;--ink:#202622;--muted:#69736b;--line:#deded2;--green:#365d4d;--green2:#e5eee7;--gold:#bb8c4a;--soft:#f0e8d8;--radius:22px;--shadow:0 18px 50px #23392c12;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--ink);line-height:1.6}a{color:inherit}button,input{font:inherit}.wrap{width:min(1120px,calc(100% - 40px));margin:auto}.topbar{position:sticky;top:0;z-index:4;background:#f5f2ebed;backdrop-filter:blur(14px);border-bottom:1px solid #deded299}.nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;gap:11px;align-items:center;text-decoration:none;font-weight:750;letter-spacing:-.03em}.mark{width:34px;height:34px;border-radius:12px;background:var(--green);display:grid;place-items:center;color:white}.mark:before{content:"";width:13px;height:13px;border:2px solid white;border-radius:4px;transform:rotate(45deg)}.navlinks{display:flex;align-items:center;gap:26px;font-size:.91rem;color:#46524a}.navlinks a{text-decoration:none}.navlinks a:hover{color:var(--green);text-decoration:underline;text-underline-offset:4px}.nav-cta,.button{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:11px 17px;border-radius:12px;background:var(--green);color:white!important;text-decoration:none;border:0;font-weight:650;cursor:pointer;transition:.18s}.nav-cta:hover,.button:hover{background:#284b3b;transform:translateY(-1px)}.button.ghost{background:transparent;color:var(--green)!important;border:1px solid #b9c9bd}.button:disabled{opacity:.45;cursor:not-allowed;transform:none}.hero{padding:80px 0 64px}.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:65px;align-items:center}.eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--green);font-size:.8rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.dot{width:8px;height:8px;background:#7eaa85;border-radius:50%;box-shadow:0 0 0 4px #dce8dc}.hero h1{font-size:clamp(2.8rem,6vw,5rem);line-height:1.04;letter-spacing:-.065em;margin:19px 0 22px;max-width:660px}.hero h1 em{font-family:Georgia,serif;font-weight:500;color:var(--green);letter-spacing:-.06em}.lead{font-size:1.12rem;color:#5c675f;max-width:600px}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.subnote{font-size:.86rem;color:var(--muted);margin-top:16px}.visual{min-height:380px;background:var(--green);border-radius:32px;padding:27px;color:#f7f6ed;position:relative;overflow:hidden;box-shadow:var(--shadow)}.visual:after,.visual:before{content:"";position:absolute;border:1px solid #ffffff29;border-radius:50%;width:340px;height:340px;right:-135px;top:-140px}.visual:after{width:260px;height:260px;right:-80px;top:-100px}.visual-top{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;color:#d9e4da;position:relative;z-index:1}.online{border:1px solid #ffffff38;border-radius:20px;padding:5px 10px}.chat-card{background:#fbfaf5;color:var(--ink);border-radius:18px;padding:18px;margin:48px 0 0;position:relative;z-index:1;box-shadow:0 14px 30px #12261d25}.chat-title{display:flex;align-items:center;gap:11px;border-bottom:1px solid #ecebe4;padding-bottom:13px}.avatar{width:35px;height:35px;border-radius:50%;background:#e7dbc6;color:#624d32;display:grid;place-items:center;font-weight:700}.chat-title strong{display:block;font-size:.9rem}.chat-title small{color:var(--muted)}.bubble{max-width:85%;padding:10px 13px;background:#edf1ea;border-radius:14px 14px 14px 4px;margin:15px 0 0;font-size:.88rem}.bubble.mine{margin-left:auto;background:#e4eee6;border-radius:14px 14px 4px 14px}.time{text-align:right;color:#7c857e;font-size:.7rem;margin-top:4px}.demo-label{font-size:.72rem;letter-spacing:.08em;color:#778078;text-transform:uppercase;text-align:center;margin-top:11px}.section{padding:75px 0}.section.white{background:var(--white)}.section-head{max-width:660px;margin-bottom:33px}.section h2{font-size:clamp(2rem,4vw,3rem);line-height:1.12;letter-spacing:-.045em;margin:8px 0 14px}.section-head p{color:var(--muted);margin:0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{padding:24px;background:var(--white);border:1px solid var(--line);border-radius:var(--radius)}.white .card{background:#fff}.card-icon{width:39px;height:39px;border-radius:13px;background:var(--green2);color:var(--green);display:grid;place-items:center;font-size:1.12rem}.card h3{margin:15px 0 8px;font-size:1.05rem}.card p{color:var(--muted);margin:0;font-size:.93rem}.tag{display:inline-block;font-size:.72rem;color:#715627;background:var(--soft);border-radius:20px;padding:4px 9px;margin-top:15px;font-weight:700}.truth{display:grid;grid-template-columns:.85fr 1.15fr;gap:55px;align-items:start}.truth-box{background:#f4f0e7;padding:26px;border-radius:var(--radius);border:1px solid #e8e0d0}.truth-box h3{margin-top:0}.truth-box ul{padding-left:20px;color:#58645c}.truth-box li+li{margin-top:9px}.timeline{display:grid;gap:14px}.step{display:grid;grid-template-columns:36px 1fr;gap:13px}.num{height:31px;width:31px;border-radius:50%;background:var(--green2);color:var(--green);display:grid;place-items:center;font-weight:750;font-size:.84rem}.step h3{margin:1px 0 5px;font-size:1rem}.step p{margin:0;color:var(--muted);font-size:.92rem}.message-area{padding:76px 0}.panel{background:var(--white);border:1px solid var(--line);border-radius:26px;padding:clamp(22px,4vw,42px);box-shadow:var(--shadow)}.app-grid{display:grid;grid-template-columns:.85fr 1.15fr;gap:38px;align-items:start}.app-intro h2{font-size:2.3rem;line-height:1.13;letter-spacing:-.05em;margin:11px 0}.status{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;background:#f4f0e7;border:1px solid #e6dece;border-radius:13px;color:#5e5139;font-size:.88rem;margin:20px 0}.status strong{display:block;color:#433a2b}.lock{font-size:1.15rem}.auth-card{border:1px solid var(--line);border-radius:18px;padding:22px;background:#fff}.auth-card h3{margin:0 0 5px}.auth-card>p{margin:0 0 18px;color:var(--muted);font-size:.9rem}.field{display:grid;gap:6px;margin:13px 0}.field label{font-size:.85rem;font-weight:650}.field input{width:100%;padding:11px 12px;border:1px solid #cfd4cc;border-radius:10px;background:#fff;color:var(--ink)}.field input:focus{outline:3px solid #365d4d22;border-color:var(--green)}.auth-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.auth-actions .button{font-size:.88rem}.inline-link{background:none;border:0;color:var(--green);padding:9px 0;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.notice{font-size:.85rem;padding:12px 13px;border-radius:10px;margin-top:14px;background:#edf1ea;color:#34483a;min-height:46px}.notice.error{background:#f9e9e7;color:#7b342c}.notice[hidden]{display:none}.fineprint{font-size:.82rem;color:var(--muted);margin-top:17px}.faq{display:grid;grid-template-columns:1fr 1fr;gap:14px}.faq details{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:17px 19px}.faq summary{cursor:pointer;font-weight:650}.faq details p{color:var(--muted);font-size:.9rem;margin-bottom:0}.footer{padding:30px 0 42px;border-top:1px solid var(--line);color:var(--muted);font-size:.84rem}.footer-row{display:flex;justify-content:space-between;gap:20px;align-items:center}.footer a{color:var(--green)}
+    @media(max-width:800px){.hero{padding:55px 0 44px}.hero-grid,.truth,.app-grid{grid-template-columns:1fr;gap:30px}.visual{min-height:330px}.cards{grid-template-columns:1fr 1fr}.section{padding:58px 0}.app-intro h2{font-size:2rem}.nav{height:63px}.navlinks{gap:14px}.navlinks a:not(.nav-cta){display:none}}
+    @media(max-width:520px){.wrap{width:min(100% - 28px,1120px)}.nav-cta{padding:9px 11px;font-size:.83rem}.hero h1{font-size:2.8rem}.hero-grid{gap:28px}.visual{padding:20px;min-height:310px;border-radius:24px}.chat-card{margin-top:36px;padding:15px}.cards,.faq{grid-template-columns:1fr}.section{padding:48px 0}.panel{padding:19px;border-radius:19px}.auth-card{padding:17px}.footer-row{align-items:flex-start;flex-direction:column;gap:8px}}
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
+  </style>
+</head>
+<body>
+  <header class="topbar"><nav class="wrap nav" aria-label="Navigation principale">
+    <a class="brand" href="#accueil"><span class="mark" aria-hidden="true"></span><span>Local Chat</span></a>
+    <div class="navlinks"><a href="#fonctionnement">Le projet</a><a href="#etat">État réel</a><a href="#questions">Questions</a><a class="nav-cta" href="#messagerie">Ouvrir l’espace web <span aria-hidden="true">↗</span></a></div>
+  </nav></header>
+  <main>
+    <section class="hero" id="accueil"><div class="wrap hero-grid">
+      <div><span class="eyebrow"><span class="dot"></span> Une messagerie hybride en construction</span>
+        <h1>Rester proche.<br><em>Se parler simplement.</em></h1>
+        <p class="lead">Un projet qui explore deux façons de communiquer : un échange de proximité entre téléphones Android et une expérience web qui se construit avec transparence.</p>
+        <div class="hero-actions"><a class="button" href="#fonctionnement">Découvrir le projet <span aria-hidden="true">↓</span></a><a class="button ghost" href="#messagerie">Voir l’espace web</a></div>
+        <p class="subnote">Le prototype Android Nearby et l’espace web sont distincts. Le navigateur ne se connecte pas aux salons Nearby.</p>
+      </div>
+      <div class="visual" aria-label="Illustration décorative d'une conversation fictive"><div class="visual-top"><span>Une conversation, en aperçu</span><span class="online">Illustration</span></div>
+        <div class="chat-card"><div class="chat-title"><span class="avatar">L</span><span><strong>Salon de proximité</strong><small>Exemple d’interface, non connecté</small></span></div>
+          <div class="bubble">Tu es bien arrivé ?</div><div class="time">09:41</div><div class="bubble mine">Oui, à tout à l’heure !</div><div class="time">09:42</div>
+          <div class="demo-label">Aperçu illustratif — aucun message envoyé</div>
+        </div>
+      </div>
+    </div></section>
+    <section class="section white" id="fonctionnement"><div class="wrap"><div class="section-head"><span class="eyebrow">Deux pistes, clairement séparées</span><h2>Une idée, deux environnements.</h2><p>La version de proximité et le futur espace web n’ont ni le même transport ni le même état d’avancement.</p></div>
+      <div class="cards">
+        <article class="card"><span class="card-icon" aria-hidden="true">⌁</span><h3>Proximité sur Android</h3><p>Le prototype Kotlin utilise Google Nearby Connections pour relier des appareils proches. L’hôte doit garder la connexion active.</p><span class="tag">Prototype Android seulement</span></article>
+        <article class="card"><span class="card-icon" aria-hidden="true">◎</span><h3>Expérience web</h3><p>Cette page présente le projet et pose le cadre de la future interface. L’authentification e-mail nécessite encore une configuration Firebase.</p><span class="tag">Messagerie en ligne désactivée</span></article>
+        <article class="card"><span class="card-icon" aria-hidden="true">⌂</span><h3>Respect des données</h3><p>Aucun message web n’est actuellement stocké, lu ou transmis. Les règles Firestore restent en refus total.</p><span class="tag">Pas de données de chat envoyées</span></article>
+      </div>
+    </div></section>
+    <section class="section" id="etat"><div class="wrap truth"><div><span class="eyebrow">Pas de promesse cachée</span><h2>Ce qui marche — et ce qui reste à faire.</h2><p style="color:var(--muted)">Nous préférons nommer les limites plutôt que présenter une maquette comme un service opérationnel.</p></div>
+      <div class="truth-box"><h3>État au 20 novembre 2026</h3><ul>
+        <li>Une application Android Nearby existe séparément sur la branche hybride expérimentale. Ses échanges sont locaux et ne passent pas par un navigateur.</li>
+        <li>Le site vitrine est fonctionnel et responsive. L’aperçu de discussion ci-dessus est une illustration, pas un chat.</li>
+        <li>L’espace web n’a pas de configuration Firebase publiée : inscription, connexion et réinitialisation ne sont donc pas actives sur cette version.</li>
+        <li>Il n’existe pas encore de backend web pour les messages. L’envoi, la réception, les salons et la synchronisation web sont désactivés.</li>
+        <li>Les règles Firestore existantes restent « deny all »; aucun accès permissif ni déploiement de règles n’est inclus.</li>
+      </ul></div>
+    </div></section>
+    <section class="section white"><div class="wrap"><div class="section-head"><span class="eyebrow">Comment avancer sans brûler d’étapes</span><h2>Un chemin vérifiable.</h2></div>
+      <div class="timeline">
+        <div class="step"><span class="num">1</span><div><h3>Configurer l’authentification e-mail</h3><p>Ajouter la configuration publique du projet Firebase et vérifier la connexion avec l’émulateur avant tout compte réel. Aucun SMS ni facturation requis.</p></div></div>
+        <div class="step"><span class="num">2</span><div><h3>Concevoir les autorisations</h3><p>Définir qui peut lire ou écrire quels documents, puis examiner les règles et les tests. Elles ne seront pas déployées sans approbation explicite.</p></div></div>
+        <div class="step"><span class="num">3</span><div><h3>Tester la messagerie de bout en bout</h3><p>Après autorisation et validation des règles, tester les échanges avec des comptes de test, puis documenter les limites avant toute mise en service.</p></div></div>
+      </div>
+    </div></section>
+    <section class="message-area" id="messagerie"><div class="wrap"><div class="panel app-grid">
+      <div class="app-intro"><span class="eyebrow">Espace web</span><h2>La connexion n’est pas encore prête.</h2><p style="color:var(--muted)">L’authentification prévue est par adresse e-mail et mot de passe. Elle ne nécessite pas de SMS. Les messages ne seront pas disponibles tant qu’un backend et des règles d’accès sûres ne sont pas établis.</p>
+        <div class="status" id="backend-status" role="status"><span class="lock" aria-hidden="true">◷</span><div><strong>Configuration Firebase manquante</strong>La connexion et la création de compte sont désactivées sur cette version.</div></div>
+        <p class="fineprint">Même après activation de l’authentification, cela ne suffira pas à créer une messagerie : Firestore reste verrouillé par défaut.</p>
+      </div>
+      <div class="auth-card" aria-labelledby="auth-title"><h3 id="auth-title">Connexion e-mail</h3><p>Les commandes seront activées uniquement avec une configuration Firebase valide.</p>
+        <form id="auth-form" autocomplete="on" novalidate>
+          <div class="field"><label for="email">Adresse e-mail</label><input id="email" name="email" type="email" autocomplete="email" placeholder="nom@exemple.com" required disabled></div>
+          <div class="field"><label for="password">Mot de passe</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Saisir votre mot de passe" required disabled></div>
+          <div class="auth-actions"><button class="button" type="submit" name="mode" value="login" disabled>Se connecter</button><button class="button ghost" type="submit" name="mode" value="register" disabled>Créer un compte</button></div>
+          <button class="inline-link" type="button" id="reset" disabled>Mot de passe oublié ?</button>
+        </form>
+        <div class="notice" id="auth-notice" role="status" aria-live="polite" hidden></div>
+        <p class="fineprint">Aucun mot de passe n’est enregistré dans cette page. Firebase Auth n’est chargé qu’après configuration. Les champs restent inactifs tant qu’elle manque.</p>
+      </div>
+    </div></div></section>
+    <section class="section white" id="questions"><div class="wrap"><div class="section-head"><span class="eyebrow">Questions fréquentes</span><h2>Pour savoir où l’on en est.</h2></div>
+      <div class="faq">
+        <details><summary>Est-ce que je peux envoyer un message depuis ce site ?</summary><p>Non. Le formulaire de chat n’est pas actif et aucun message web n’est envoyé. Il n’existe pas encore de service web de messages.</p></details>
+        <details><summary>Le navigateur peut-il rejoindre un salon Nearby ?</summary><p>Non. Nearby est une fonctionnalité expérimentale de l’application Android. Ce site ne prétend pas la prendre en charge.</p></details>
+        <details><summary>Pourquoi les boutons de connexion sont-ils désactivés ?</summary><p>La configuration Firebase n’est pas livrée avec le site. Sans configuration vérifiée, aucun compte ne peut être créé ou authentifié.</p></details>
+        <details><summary>Des frais ou des SMS sont-ils nécessaires ?</summary><p>Le projet privilégie l’authentification e-mail/mot de passe et Firebase Spark. Aucun paiement, forfait, SMS ou activation de facturation n’est demandé par cette version.</p></details>
+      </div>
+    </div></section>
+  </main>
+  <footer class="footer"><div class="wrap footer-row"><span>Local Chat · Projet en développement · État transparent</span><a href="https://github.com/mardocheelutumba/L1APBChat/tree/web-messagerie" rel="noreferrer">Code source de cette branche</a></div></footer>
+  <script>
+    // Optional public Firebase web config. Deliberately blank: no project config or secret is committed.
+    // If configured by the maintainer, this enables Firebase email/password Auth only. It does not enable chat.
+    window.LOCAL_CHAT_FIREBASE_CONFIG = window.LOCAL_CHAT_FIREBASE_CONFIG || null;
+    (async function initEmailAuth(){
+      const cfg=window.LOCAL_CHAT_FIREBASE_CONFIG;
+      const configReady=!!(cfg&&cfg.apiKey&&cfg.authDomain&&cfg.projectId&&cfg.appId);
+      const form=document.getElementById('auth-form');
+      const notice=document.getElementById('auth-notice');
+      const status=document.getElementById('backend-status');
+      const reset=document.getElementById('reset');
+      const setNotice=(text,error=false)=>{notice.textContent=text;notice.hidden=false;notice.classList.toggle('error',error)};
+      if(!configReady)return;
+      try{
+        const appMod=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
+        const authMod=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
+        const app=appMod.initializeApp(cfg);
+        const auth=authMod.getAuth(app);
+        if(cfg.authEmulator)authMod.connectAuthEmulator(auth,cfg.authEmulator,{disableWarnings:true});
+        form.querySelectorAll('input,button').forEach(el=>el.disabled=false);reset.disabled=false;
+        status.innerHTML='<span class="lock" aria-hidden="true">✓</span><div><strong>Configuration d’authentification détectée</strong>Connexion Firebase e-mail seulement. La messagerie reste désactivée.</div>';
+        form.addEventListener('submit',async e=>{
+          e.preventDefault();const data=new FormData(form);const email=String(data.get('email')||'').trim();const password=String(data.get('password')||'');const mode=e.submitter?.value||'login';
+          if(!email||!password){setNotice('Saisissez une adresse e-mail et un mot de passe.',true);return}
+          const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+          try{if(mode==='register'){await authMod.createUserWithEmailAndPassword(auth,email,password);setNotice('Compte Firebase créé. Les messages restent désactivés : aucun backend de chat n’est configuré.')}else{await authMod.signInWithEmailAndPassword(auth,email,password);setNotice('Authentification réussie. Les messages restent désactivés : aucun backend de chat n’est configuré.')}}
+          catch(err){const messages={'auth/email-already-in-use':'Cette adresse possède déjà un compte.','auth/invalid-email':'Adresse e-mail invalide.','auth/weak-password':'Mot de passe trop faible.','auth/invalid-credential':'Adresse e-mail ou mot de passe incorrect.','auth/too-many-requests':'Trop de tentatives. Réessayez plus tard.'};setNotice(messages[err.code]||'Connexion impossible. Vérifiez la configuration Firebase et réessayez.',true)}
+          finally{buttons.forEach(b=>b.disabled=false)}
+        });
+        reset.addEventListener('click',async()=>{const email=document.getElementById('email').value.trim();if(!email){setNotice('Saisissez d’abord votre adresse e-mail.',true);return}try{await authMod.sendPasswordResetEmail(auth,email);setNotice('Si cette adresse est enregistrée, Firebase enverra les instructions de réinitialisation.')}catch(err){setNotice(err.code==='auth/invalid-email'?'Adresse e-mail invalide.':'Impossible de demander la réinitialisation. Vérifiez Firebase.',true)}});
+      }catch(err){status.innerHTML='<span class="lock" aria-hidden="true">!</span><div><strong>Authentification indisponible</strong>La configuration existe, mais Firebase Auth ne s’est pas chargé. Vérifiez le réseau et la configuration.</div>';setNotice('Firebase Auth ne peut pas être initialisé dans cet environnement.',true)}
+    })();
+  </script>
+</body>
+</html>
