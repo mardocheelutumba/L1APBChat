@@ -1,0 +1,31 @@
+name: Tester les règles Firestore
+
+on:
+  push:
+    branches: [hybride-experimental]
+  pull_request:
+    branches: [hybride-experimental]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rules-emulator-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Installer les dépendances des tests
+        run: npm install
+      - name: Vérifier les refus d’accès avec l’émulateur Firestore
+        run: npm run test:rules
