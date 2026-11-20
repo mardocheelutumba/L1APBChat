@@ -1,0 +1,12 @@
+// Firebase Firestore rules for the experimental branch.
+// Intentionally fail closed: no client, signed in or otherwise, can read or write.
+// Keep the deployed Firebase project's deny-all rules unchanged until an
+// authenticated membership model is implemented and validated with the Rules Emulator.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
