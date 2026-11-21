@@ -1,5 +1,6 @@
 package cd.eifi.l1apbchat
 
+import cd.localchat.app.R
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Intent
@@ -41,7 +42,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.util.UUID
 
-private const val SERVICE_ID = "cd.eifi.l1apbchat.localchat"
+private const val SERVICE_ID = "cd.localchat.app.localchat"
 private data class ChatMessage(val name: String, val text: String, val time: Long, val mine: Boolean = false, val delivery: String = "")
 
 class MainActivity : ComponentActivity() {
@@ -49,19 +50,27 @@ class MainActivity : ComponentActivity() {
     private val peers = mutableStateMapOf<String, String>() // nearby endpoint id -> display name
     private val connectedPeers = mutableStateListOf<String>()
     private val messages = mutableStateListOf<ChatMessage>()
-    private var status by mutableStateOf("En attente d’une connexion locale")
+    private var status by mutableStateOf("")
     private var isHost = false
+    private var hostConnectionReady by mutableStateOf(false)
+    private var searchingForRoom by mutableStateOf(false)
     private var lastHostName: String? = null
     private var reconnecting = false
     private var reconnectAttempt = 0
+    private var roomAuthenticated by mutableStateOf(false)
+    private var roomAccessCode by mutableStateOf("")
+    private var pendingAuthNonce by mutableStateOf("")
+    private var awaitingCodeUpdate by mutableStateOf(false)
+    private var accessDialogOpen by mutableStateOf(false)
+    private var accessCodeInput by mutableStateOf("")
     private var reconnectConnectionPending = false
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectTimeout: Runnable? = null
     private val profilePreferences by lazy { getSharedPreferences("student_profile", MODE_PRIVATE) }
-    private var nickname by mutableStateOf("Étudiant")
-    private var programName by mutableStateOf("L1 Analyse et Programmation B")
-    private var programCode by mutableStateOf("AP/B")
-    private val displayName: String get() = "${nickname.trim().ifBlank { "Étudiant" }} · $programCode"
+    private var nickname by mutableStateOf("Participant")
+    private var programName by mutableStateOf("Salon ouvert")
+    private var programCode by mutableStateOf("")
+    private val displayName: String get() = nickname.trim().ifBlank { getString(R.string.applicant) } + programCode.trim().takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
     private fun bluetoothEnabled(): Boolean = try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true } catch (_: Exception) { false }
     private fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) true else try {
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
@@ -70,7 +79,12 @@ class MainActivity : ComponentActivity() {
     private fun playServicesAvailable(): Boolean = try { GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this) == com.google.android.gms.common.ConnectionResult.SUCCESS } catch (_: Exception) { false }
     private fun missingPermissions(): List<String> = requiredPermissions().filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
 
-    private fun serviceIdFor(group: String) = SERVICE_ID
+    private fun serviceIdFor(group: String): String {
+        val normalized = group.trim().lowercase(Locale.ROOT).ifBlank { "salon ouvert" }
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+            .take(12).joinToString("") { "%02x".format(it) }
+        return "cd.localchat.app.r$hash"
+    }
     private val receivedIds = mutableSetOf<String>()
 
     private fun requiredPermissions(): Array<String> {
@@ -104,27 +118,30 @@ class MainActivity : ComponentActivity() {
             // Le prototype n'accepte que des membres confirmés par l'utilisateur.
             runOnUiThread {
                 android.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Demande de connexion")
-                    .setMessage("${info.endpointName} veut rejoindre ta connexion $programCode.")
-                    .setNegativeButton("Refuser") { _, _ -> client.rejectConnection(id) }
-                    .setPositiveButton("Accepter") { _, _ -> client.acceptConnection(id, payloadCallback) }
+                    .setTitle(getString(R.string.join_request))
+                    .setMessage(getString(R.string.participant_request, info.endpointName, programName))
+                    .setNegativeButton(getString(R.string.reject)) { _, _ -> client.rejectConnection(id) }
+                    .setPositiveButton(getString(R.string.accept)) { _, _ -> client.acceptConnection(id, payloadCallback) }
                     .show()
             }
         }
         override fun onConnectionResult(id: String, result: ConnectionResolution) {
             runOnUiThread {
                 if (result.status.isSuccess) {
-                    if (isHost) peers[id] = peers[id] ?: "Membre connecté"
+                    if (isHost) roomAuthenticated = true
+                    if (isHost) peers[id] = peers[id] ?: getString(R.string.member_connected)
+                    else status = getString(R.string.access_checking)
                     if (id !in connectedPeers) connectedPeers.add(id)
+                    searchingForRoom = false
                     reconnecting = false
                     reconnectConnectionPending = false
                     reconnectAttempt = 0
                     reconnectTimeout?.let(reconnectHandler::removeCallbacks)
-                    status = "Connecté à ${connectedPeers.size} appareil(s)"
-                    if (isHost) sendSystemWelcome(id)
+                    status = if (isHost) getString(R.string.status_connected) else getString(R.string.access_checking)
+
                 } else {
                     peers.remove(id)
-                    if (reconnecting) finishReconnectAttempt() else status = "Connexion refusée ou interrompue"
+                    if (reconnecting) finishReconnectAttempt() else status = getString(R.string.connection_denied)
                 }
             }
         }
@@ -132,10 +149,15 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 peers.remove(id)
                 connectedPeers.remove(id)
+                if (!isHost) {
+                    roomAuthenticated = false
+                    awaitingCodeUpdate = false
+                    accessDialogOpen = false
+                }
                 if (connectedPeers.isEmpty()) {
-                    status = "Connexion interrompue"
+                    status = getString(R.string.connection_interrupted)
                     if (!isHost) beginReconnect()
-                } else status = "Connecté à ${connectedPeers.size} appareil(s)"
+                } else status = if (connectedPeers.size == 1) getString(R.string.connected_one, connectedPeers.size) else getString(R.string.connected_many, connectedPeers.size)
             }
         }
     }
@@ -144,6 +166,7 @@ class MainActivity : ComponentActivity() {
         override fun onEndpointFound(id: String, info: DiscoveredEndpointInfo) {
             peers[id] = info.endpointName
             if (reconnecting && !reconnectConnectionPending && connectedPeers.isEmpty() && info.endpointName == lastHostName) {
+                searchingForRoom = false
                 reconnectTimeout?.let(reconnectHandler::removeCallbacks)
                 client.stopDiscovery()
                 reconnectConnectionPending = true
@@ -166,13 +189,47 @@ class MainActivity : ComponentActivity() {
             val raw = payload.asBytes()?.toString(Charsets.UTF_8) ?: return
             try {
                 val obj = JSONObject(raw)
+                when (obj.optString("type")) {
+                    "auth_required" -> {
+                        val nonce = obj.optString("nonce")
+                        if (nonce.isBlank()) return
+                        if (awaitingCodeUpdate) {
+                            pendingAuthNonce = nonce
+                        } else {
+                            val proof = if (!obj.optBoolean("required", false)) "" else if (roomAccessCode.isEmpty()) "" else authProof(roomAccessCode, nonce)
+                            val response = JSONObject().put("type", "auth").put("proof", proof)
+                            client.sendPayload(id, Payload.fromBytes(response.toString().toByteArray()))
+                        }
+                        return
+                    }
+                    "auth_result" -> {
+                        val accepted = obj.optBoolean("ok", false)
+                        val welcome = obj.optJSONObject("welcome")
+                        runOnUiThread {
+                            roomAuthenticated = accepted
+                            status = if (accepted) getString(R.string.access_code_ok) else getString(R.string.access_code_wrong)
+                            if (accepted) {
+                                awaitingCodeUpdate = false
+                                accessDialogOpen = false
+                                if (welcome != null) messages.add(ChatMessage(welcome.optString("name", getString(R.string.app_title)), welcome.optString("text", ""), welcome.optLong("time", System.currentTimeMillis()), delivery = getString(R.string.received)))
+                            } else {
+                                awaitingCodeUpdate = true
+                                pendingAuthNonce = obj.optString("nonce")
+                                accessCodeInput = ""
+                                accessDialogOpen = true
+                            }
+                        }
+                        return
+                    }
+                }
+                if (!roomAuthenticated) return
                 val mid = obj.optString("id")
                 if (mid.isBlank() || !receivedIds.add(mid)) return
                 val chatMessage = ChatMessage(
-                    name = obj.optString("name", "Étudiant"),
+                    name = obj.optString("name", getString(R.string.applicant)),
                     text = obj.optString("text", ""),
                     time = obj.optLong("time", System.currentTimeMillis()),
-                    delivery = "Reçu"
+                    delivery = getString(R.string.received)
                 )
                 runOnUiThread { messages.add(chatMessage) }
                 // Le téléphone hôte relaie le message du membre aux autres appareils.
@@ -185,17 +242,25 @@ class MainActivity : ComponentActivity() {
         override fun onPayloadTransferUpdate(id: String, update: PayloadTransferUpdate) = Unit
     }
 
+    private fun authProof(code: String, nonce: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(code.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(nonce.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
     private fun sendSystemWelcome(endpointId: String) {
-        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", "ESPACE ÉTUDIANT").put("text", "Bienvenue dans $programName !").put("time", System.currentTimeMillis())
+        val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", getString(R.string.app_title)).put("text", getString(R.string.room_welcome, programName)).put("time", System.currentTimeMillis())
         client.sendPayload(endpointId, Payload.fromBytes(obj.toString().toByteArray()))
     }
 
     private fun startHost() {
-        if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
+        if (!hasPermissions()) { status = getString(R.string.permission_prompt); return }
+        if (roomAccessCode.isNotBlank() && roomAccessCode.length != 4) { status = getString(R.string.access_code_length); return }
         isHost = true
+        roomAuthenticated = true
         profilePreferences.edit().putBoolean("host_active", true).apply()
-        status = "Création du groupe…"
-        HostConnectionService.start(this, displayName, programName, programCode)
+        status = getString(R.string.group_creating)
+        HostConnectionService.start(this, displayName, programName, programCode, roomAccessCode)
     }
 
     private fun searchGroup() {
@@ -203,24 +268,28 @@ class MainActivity : ComponentActivity() {
         reconnectConnectionPending = false
         reconnectTimeout?.let(reconnectHandler::removeCallbacks)
         reconnectAttempt = 0
-        if (!hasPermissions()) { status = "Autorise les permissions demandées pour continuer."; return }
+        if (!hasPermissions()) { status = getString(R.string.permission_prompt); return }
         isHost = false
-        status = "Recherche de la connexion $programCode…"
+        roomAuthenticated = false
+        searchingForRoom = true
+        status = getString(R.string.search_room, programName)
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(serviceIdFor(programName), discovery, options)
-            .addOnFailureListener { status = "Échec de la recherche : ${it.localizedMessage}" }
+            .addOnFailureListener { searchingForRoom = false; status = getString(R.string.search_failed, it.localizedMessage ?: "") }
     }
 
     private fun connect(id: String) {
+        roomAuthenticated = false
         reconnecting = false
         reconnectConnectionPending = false
         reconnectTimeout?.let(reconnectHandler::removeCallbacks)
         client.requestConnection(displayName, id, connectionLifecycle)
-            .addOnFailureListener { status = "Connexion impossible : ${it.localizedMessage}" }
+            .addOnFailureListener { status = getString(R.string.connection_failed, it.localizedMessage ?: "") }
     }
 
     private fun beginReconnect() {
         if (isHost || lastHostName.isNullOrBlank() || reconnecting) return
+        roomAuthenticated = false
         reconnecting = true
         reconnectAttempt = 0
         runReconnectAttempt()
@@ -230,11 +299,13 @@ class MainActivity : ComponentActivity() {
         if (!reconnecting || isHost || connectedPeers.isNotEmpty()) return
         if (reconnectAttempt >= 3) {
             reconnecting = false
-            status = "Hôte introuvable après 3 essais. Recherche manuelle possible."
+            searchingForRoom = false
+            status = getString(R.string.host_not_found)
             return
         }
         reconnectAttempt++
-        status = "Reconnexion : recherche de l’hôte (${reconnectAttempt}/3)…"
+        searchingForRoom = true
+        status = getString(R.string.reconnect_search, reconnectAttempt)
         val options = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
         client.startDiscovery(serviceIdFor(programName), discovery, options)
             .addOnFailureListener { finishReconnectAttempt() }
@@ -253,28 +324,32 @@ class MainActivity : ComponentActivity() {
         reconnectConnectionPending = false
         if (reconnectAttempt >= 3) {
             reconnecting = false
-            status = "Hôte introuvable après 3 essais. Recherche manuelle possible."
+            searchingForRoom = false
+            status = getString(R.string.host_not_found)
         } else reconnectHandler.postDelayed({ runReconnectAttempt() }, 1_000)
     }
 
     private fun sendMessage(text: String) {
         val clean = text.trim()
         if (clean.isEmpty()) return
-        if (connectedPeers.isEmpty()) { status = "Connecte-toi à un appareil avant d’envoyer un message."; return }
+        if (connectedPeers.isEmpty()) { status = getString(R.string.connect_before_send); return }
+        if (!roomAuthenticated) { status = getString(R.string.access_checking); return }
         val sentAt = System.currentTimeMillis()
         val obj = JSONObject().put("id", UUID.randomUUID().toString()).put("name", displayName).put("text", clean).put("time", sentAt)
         val bytes = Payload.fromBytes(obj.toString().toByteArray())
-        messages.add(ChatMessage(displayName, clean, sentAt, mine = true, delivery = "Envoi tenté"))
+        messages.add(ChatMessage(displayName, clean, sentAt, mine = true, delivery = getString(R.string.message_delivery)))
         if (isHost) HostConnectionService.send(this, obj.toString())
         else connectedPeers.firstOrNull()?.let { client.sendPayload(it, bytes) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        status = getString(R.string.pending_status)
         val profilePrefs = getSharedPreferences("student_profile", MODE_PRIVATE)
-        programName = profilePrefs.getString("filiere", "L1 Analyse et Programmation B") ?: "L1 Analyse et Programmation B"
-        programCode = profilePrefs.getString("filiere_code", "AP/B") ?: "AP/B"
-        nickname = profilePrefs.getString("name", "")?.ifBlank { "Étudiant" } ?: "Étudiant"
+        programName = profilePrefs.getString("room_name", "Salon ouvert") ?: "Salon ouvert"
+        programCode = profilePrefs.getString("room_note", "") ?: ""
+        roomAccessCode = profilePrefs.getString("room_access_code", "") ?: ""
+        nickname = profilePrefs.getString("name", "")?.ifBlank { getString(R.string.applicant) } ?: getString(R.string.applicant)
         lastHostName = profilePrefs.getString("last_host_name", null)
         setContent {
             val navy = androidx.compose.ui.graphics.Color(0xFF10233F)
@@ -282,15 +357,15 @@ class MainActivity : ComponentActivity() {
             val mint = androidx.compose.ui.graphics.Color(0xFFEAF6F3)
             val page = androidx.compose.ui.graphics.Color(0xFFF4F7FA)
             val ink = androidx.compose.ui.graphics.Color(0xFF1D2B3A)
-            val connected = status.startsWith("Connecté")
-            val groupActive = status.contains("connexion est prête") || status.contains("groupe actif")
-            val searching = status.startsWith("Recherche")
+            val connected = connectedPeers.isNotEmpty() && (isHost || roomAuthenticated)
+            val groupActive = hostConnectionReady
+            val searching = searchingForRoom
             val online = connected || groupActive
             val networkLabel = when {
-                connected -> "Connecté"
-                groupActive -> "Connexion prête"
-                searching -> "Recherche en cours"
-                else -> "En attente d’une connexion locale"
+                connected -> getString(R.string.status_connected)
+                groupActive -> getString(R.string.network_ready)
+                searching -> getString(R.string.searching_label)
+                else -> getString(R.string.pending_status)
             }
             MaterialTheme(
                 colorScheme = lightColorScheme(primary = teal, secondary = navy, background = page, surface = androidx.compose.ui.graphics.Color.White),
@@ -305,24 +380,6 @@ class MainActivity : ComponentActivity() {
                 var input by remember { mutableStateOf("") }
                 var aboutOpen by rememberSaveable { mutableStateOf(false) }
                 var diagnosticOpen by rememberSaveable { mutableStateOf(false) }
-                var addFiliereDialog by rememberSaveable { mutableStateOf(false) }
-                var customFiliereName by rememberSaveable { mutableStateOf("") }
-                var customFiliereCode by rememberSaveable { mutableStateOf("") }
-                var filiereError by rememberSaveable { mutableStateOf("") }
-                val customFilieres = remember {
-                    mutableStateListOf<Triple<String, String, String>>().apply {
-                        val stored = profilePrefs.getString("custom_filieres", "[]") ?: "[]"
-                        try {
-                            val array = JSONArray(stored)
-                            for (i in 0 until array.length()) {
-                                val item = array.getJSONObject(i)
-                                val label = item.optString("name")
-                                val code = item.optString("code")
-                                if (label.isNotBlank() && code.isNotBlank()) add(Triple(label, code, code))
-                            }
-                        } catch (_: Exception) { }
-                    }
-                }
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val drawerScope = rememberCoroutineScope()
                 ModalNavigationDrawer(
@@ -330,19 +387,19 @@ class MainActivity : ComponentActivity() {
                     drawerContent = {
                         ModalDrawerSheet(drawerContainerColor = page) {
                             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("ESPACE ÉTUDIANT", style = MaterialTheme.typography.titleMedium, color = navy)
+                                Text(getString(R.string.app_title), style = MaterialTheme.typography.titleMedium, color = navy)
                                 if (profileSaved) Text(displayName, style = MaterialTheme.typography.bodyMedium, color = ink)
                             }
                             HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFFE2E8F0))
                             NavigationDrawerItem(
-                                label = { Text("À propos") },
+                                label = { Text(getString(R.string.about)) },
                                 selected = false,
                                 icon = { Text("ⓘ", color = teal) },
                                 colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = page, unselectedTextColor = navy, unselectedIconColor = teal),
                                 onClick = { aboutOpen = true; drawerScope.launch { drawerState.close() } }
                             )
                             NavigationDrawerItem(
-                                label = { Text(if (profileSaved) "Mon profil" else "Configurer mon profil") },
+                                label = { Text(if (profileSaved) getString(R.string.my_profile) else getString(R.string.configure_profile)) },
                                 selected = false,
                                 icon = { Text("●", color = teal) },
                                 colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = page, unselectedTextColor = navy, unselectedIconColor = teal),
@@ -352,11 +409,11 @@ class MainActivity : ComponentActivity() {
                     }
                 ) {
                 val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-                    if (results.values.all { it }) status = "Permissions accordées. Tu peux créer ou rechercher une connexion."
-                    else status = "Certaines permissions sont refusées : la connexion hors ligne ne pourra pas démarrer."
+                    if (results.values.all { it }) status = getString(R.string.permission_ok)
+                    else status = getString(R.string.permission_missing)
                 }
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                    if (granted) startHost() else status = "Autorise les notifications pour garder visible la connexion ouverte."
+                    if (granted) startHost() else status = getString(R.string.notification_needed)
                 }
                 Surface(Modifier.fillMaxSize(), color = page) {
                     Column(
@@ -368,7 +425,7 @@ class MainActivity : ComponentActivity() {
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                         // Configuration défilante, clavier et barre d’envoi hors de cette zone.
-                        // En-tête de marque : identité campus et état du réseau local.
+                        // En-tête de marque : profil et état du réseau local.
                         Card(
                             colors = CardDefaults.cardColors(containerColor = navy),
                             shape = MaterialTheme.shapes.large,
@@ -380,7 +437,7 @@ class MainActivity : ComponentActivity() {
                                         TextButton(onClick = { drawerScope.launch { drawerState.open() } }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
                                             Text("☰", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
                                         }
-                                        Text("ESPACE ÉTUDIANT", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f))
+                                        Text(getString(R.string.app_title), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall, maxLines = 1, modifier = Modifier.weight(1f))
                                     }
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -388,7 +445,7 @@ class MainActivity : ComponentActivity() {
                                         Text("●  LOCAL", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = androidx.compose.ui.graphics.Color(0xFFB8E9E1), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                Text("Connecte-toi et échange à proximité.", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodySmall)
+                                Text(getString(R.string.nearby_tagline), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodySmall)
                             }
                         }
 
@@ -398,15 +455,15 @@ class MainActivity : ComponentActivity() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("IDENTITÉ ÉTUDIANTE", color = teal, style = MaterialTheme.typography.labelMedium)
+                                Text(getString(R.string.profile), color = teal, style = MaterialTheme.typography.labelMedium)
                                 OutlinedTextField(
                                     value = name,
                                     onValueChange = {
                                         name = it
-                                        nickname = it.ifBlank { "Étudiant" }
+                                        nickname = it.ifBlank { getString(R.string.applicant) }
                                         profilePrefs.edit().putString("name", it).apply()
                                     },
-                                    placeholder = { Text("Nlm") },
+                                    placeholder = { Text(getString(R.string.name_placeholder)) },
                                     singleLine = true,
                                     shape = MaterialTheme.shapes.medium,
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -417,94 +474,44 @@ class MainActivity : ComponentActivity() {
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                Text("FILIÈRE", color = teal, style = MaterialTheme.typography.labelMedium)
-                                var filiereMenu by remember { mutableStateOf(false) }
-                                val filieres = listOf(
-                                    Triple("L1 Analyse et Programmation A", "AP/A", "AP/A"),
-                                    Triple("L1 Analyse et Programmation B", "AP/B", "AP/B"),
-                                    Triple("L1 Réseau C", "R/C", "R/C"),
-                                    Triple("L1 Réseau D", "R/D", "R/D")
-                                ) + customFilieres.toList()
-                                val selectedFiliere = filieres.firstOrNull { it.first == programName } ?: filieres[1]
-                                Box {
-                                    OutlinedButton(onClick = { filiereMenu = true }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
-                                        Text("${selectedFiliere.first}  ·  ${selectedFiliere.second}     ▾")
-                                    }
-                                    DropdownMenu(expanded = filiereMenu, onDismissRequest = { filiereMenu = false }) {
-                                        filieres.forEach { (label, abbreviation, code) ->
-                                            DropdownMenuItem(
-                                                text = { Text("$label  ·  $abbreviation") },
-                                                onClick = {
-                                                    programName = label
-                                                    programCode = code
-                                                    profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
-                                                    filiereMenu = false
-                                                }
-                                            )
-                                        }
-                                        HorizontalDivider()
-                                        DropdownMenuItem(
-                                            text = { Text("+ Ajouter une filière") },
-                                            onClick = {
-                                                filiereMenu = false
-                                                customFiliereName = ""
-                                                customFiliereCode = ""
-                                                filiereError = ""
-                                                addFiliereDialog = true
-                                            }
-                                        )
-                                    }
-                                }
-                                if (addFiliereDialog) {
-                                    AlertDialog(
-                                        containerColor = androidx.compose.ui.graphics.Color.White,
-                                        titleContentColor = navy,
-                                        textContentColor = ink,
-                                        onDismissRequest = { addFiliereDialog = false },
-                                        title = { Text("Ajouter une filière") },
-                                        text = {
-                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                OutlinedTextField(
-                                                    value = customFiliereName,
-                                                    onValueChange = { customFiliereName = it },
-                                                    label = { Text("Nom de la filière") },
-                                                    singleLine = true
-                                                )
-                                                OutlinedTextField(
-                                                    value = customFiliereCode,
-                                                    onValueChange = { customFiliereCode = it },
-                                                    label = { Text("Abréviation (ex. AP/C)") },
-                                                    singleLine = true
-                                                )
-                                                if (filiereError.isNotBlank()) Text(filiereError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                                            }
-                                        },
-                                        confirmButton = {
-                                            TextButton(
-                                                enabled = customFiliereName.isNotBlank() && customFiliereCode.isNotBlank(),
-                                                onClick = {
-                                                    val label = customFiliereName.trim()
-                                                    val code = customFiliereCode.trim()
-                                                    if (filieres.none { it.first.equals(label, true) || it.second.equals(code, true) }) {
-                                                        customFilieres.add(Triple(label, code, code))
-                                                        val array = JSONArray()
-                                                        customFilieres.forEach { item ->
-                                                            array.put(JSONObject().put("name", item.first).put("code", item.second))
-                                                        }
-                                                        profilePrefs.edit().putString("custom_filieres", array.toString()).apply()
-                                                        programName = label
-                                                        programCode = code
-                                                        profilePrefs.edit().putString("filiere", label).putString("filiere_code", code).apply()
-                                                        addFiliereDialog = false
-                                                    } else {
-                                                        filiereError = "Ce nom ou cette abréviation existe déjà. Choisis une autre valeur."
-                                                    }
-                                                }
-                                            ) { Text("Ajouter") }
-                                        },
-                                        dismissButton = { TextButton(onClick = { addFiliereDialog = false }) { Text("Annuler") } }
-                                    )
-                                }
+                                Text(getString(R.string.room_name), color = teal, style = MaterialTheme.typography.labelMedium)
+                                OutlinedTextField(
+                                    value = programName,
+                                    onValueChange = {
+                                        programName = it
+                                        profilePrefs.edit().putString("room_name", it).apply()
+                                    },
+                                    placeholder = { Text(getString(R.string.room_placeholder)) },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = roomAccessCode,
+                                    onValueChange = { value ->
+                                        roomAccessCode = value.filter { it in '0'..'9' }.take(4)
+                                        profilePrefs.edit().putString("room_access_code", roomAccessCode).apply()
+                                    },
+                                    label = { Text(getString(R.string.access_code_optional)) },
+                                    placeholder = { Text(getString(R.string.access_code_hint)) },
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = programCode,
+                                    onValueChange = {
+                                        programCode = it
+                                        profilePrefs.edit().putString("room_note", it).apply()
+                                    },
+                                    label = { Text(getString(R.string.organization_optional)) },
+                                    placeholder = { Text(getString(R.string.organization_placeholder)) },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                                 Button(
                                     onClick = {
                                         val cleanName = name.trim()
@@ -514,19 +521,19 @@ class MainActivity : ComponentActivity() {
                                             profileSaved = true
                                         }
                                     },
-                                    enabled = name.isNotBlank(),
+                                    enabled = name.isNotBlank() && (roomAccessCode.isBlank() || roomAccessCode.length == 4),
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium
-                                ) { Text("Enregistrer mon profil") }
+                                ) { Text(getString(R.string.save_profile)) }
                             }
                         }
 
                         Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(if (isHost) "Tu héberges la connexion : reste à proximité." else "1. Crée une connexion sur un téléphone.  2. Recherche-la ici pour la rejoindre.", style = MaterialTheme.typography.bodySmall, color = ink)
+                                Text(if (isHost) getString(R.string.host_hint) else getString(R.string.host_connection_hint), style = MaterialTheme.typography.bodySmall, color = ink)
                                 Button(
                                     onClick = {
-                                        if (!profileSaved) status = "Enregistre d’abord ton identité étudiante."
+                                        if (!profileSaved) status = getString(R.string.profile_prompt)
                                         else if (!hasPermissions()) permissionLauncher.launch(requiredPermissions())
                                         else if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                         else startHost()
@@ -534,13 +541,13 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                                ) { Text("Créer une connexion", maxLines = 1, style = MaterialTheme.typography.labelLarge) }
+                                ) { Text(getString(R.string.create_connection), maxLines = 1, style = MaterialTheme.typography.labelLarge) }
                                 OutlinedButton(
-                                    onClick = { if (!profileSaved) status = "Enregistre d’abord ton identité étudiante." else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
+                                    onClick = { if (roomAccessCode.isNotBlank() && roomAccessCode.length != 4) status = getString(R.string.access_code_length) else if (!profileSaved) status = getString(R.string.profile_prompt) else if (hasPermissions()) searchGroup() else permissionLauncher.launch(requiredPermissions()) },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = MaterialTheme.shapes.medium,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                                ) { Text("Rechercher", maxLines = 1, style = MaterialTheme.typography.labelLarge) }
+                                ) { Text(getString(R.string.search), maxLines = 1, style = MaterialTheme.typography.labelLarge) }
                             }
                         }
 
@@ -550,34 +557,34 @@ class MainActivity : ComponentActivity() {
                                 Text("●", color = if (online) teal else ink)
                                 Column(Modifier.weight(1f)) {
                                     Text(networkLabel, style = MaterialTheme.typography.labelLarge, color = ink)
-                                    if (status != "En attente d’une connexion locale" && !groupActive && !connected) {
+                                    if (status != getString(R.string.pending_status) && !groupActive && !connected) {
                                         Text(status, style = MaterialTheme.typography.bodySmall, color = ink, maxLines = 1)
                                     }
                                 }
                                 Surface(color = if (online) mint else page, shape = MaterialTheme.shapes.small) {
-                                    Text("${connectedPeers.size} connecté${if (connectedPeers.size == 1) "" else "s"}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = if (online) teal else ink, style = MaterialTheme.typography.labelLarge)
+                                    Text(if (connectedPeers.size == 1) getString(R.string.connected_one, connectedPeers.size) else getString(R.string.connected_many, connectedPeers.size), Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = if (online) teal else ink, style = MaterialTheme.typography.labelLarge)
                                 }
                             }
                         }
 
-                        TextButton(onClick = { diagnosticOpen = true }) { Text("Vérifier les conditions de connexion") }
+                        TextButton(onClick = { diagnosticOpen = true }) { Text(getString(R.string.conditions)) }
 
                         if (peers.any { it.key !in connectedPeers }) {
                             Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
                                 Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
-                                    Text("CONNEXIONS DISPONIBLES", style = MaterialTheme.typography.labelMedium, color = teal)
+                                    Text(getString(R.string.available_connections), style = MaterialTheme.typography.labelMedium, color = teal)
                                     peers.toList().filter { it.first !in connectedPeers }.forEach { (id, label) ->
                                         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text(label, color = ink, modifier = Modifier.weight(1f))
-                                            TextButton(onClick = { connect(id) }) { Text("Rejoindre") }
+                                            TextButton(onClick = { connect(id) }) { Text(getString(R.string.join)) }
                                         }
                                     }
                                 }
                             }
                         }
                         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Discussion", style = MaterialTheme.typography.titleLarge, color = navy)
-                            Text("${messages.size} message${if (messages.size == 1) "" else "s"}", style = MaterialTheme.typography.labelMedium, color = ink)
+                            Text(getString(R.string.discussion), style = MaterialTheme.typography.titleLarge, color = navy)
+                            Text(if (messages.size == 1) getString(R.string.messages_one, messages.size) else getString(R.string.messages_many, messages.size), style = MaterialTheme.typography.labelMedium, color = ink)
                         }
                         Card(
                             Modifier.fillMaxWidth().then(if (profileSaved) Modifier.weight(1f) else Modifier.heightIn(min = 180.dp, max = 360.dp)),
@@ -590,8 +597,8 @@ class MainActivity : ComponentActivity() {
                                         Text("☏", Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = teal, style = MaterialTheme.typography.headlineSmall)
                                     }
                                     Spacer(Modifier.height(10.dp))
-                                    Text("Aucune discussion pour le moment", style = MaterialTheme.typography.titleMedium, color = navy)
-                                    Text("Les messages de tes camarades apparaîtront ici dès que tu auras rejoint une connexion.", style = MaterialTheme.typography.bodySmall, color = ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    Text(getString(R.string.empty_chat), style = MaterialTheme.typography.titleMedium, color = navy)
+                                    Text(getString(R.string.host_message_hint), style = MaterialTheme.typography.bodySmall, color = ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 }
                             } else {
                                 LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -600,7 +607,7 @@ class MainActivity : ComponentActivity() {
                                         val dayLabel = remember(msg.time) { SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(msg.time)) }
                                         val todayLabel = remember { SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date()) }
                                         if (index == 0 || SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(messages[index - 1].time)) != dayLabel) {
-                                            Text(if (dayLabel == todayLabel) "Aujourd’hui · ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(msg.time))}" else SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(msg.time)), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = ink)
+                                            Text(if (dayLabel == todayLabel) "${getString(R.string.today)} · ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(msg.time))}" else SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(msg.time)), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = ink)
                                         }
                                         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (msg.mine) androidx.compose.ui.Alignment.End else androidx.compose.ui.Alignment.Start) {
                                             val previousSameSender = index > 0 && messages[index - 1].name == msg.name && SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(messages[index - 1].time)) == dayLabel
@@ -629,7 +636,7 @@ class MainActivity : ComponentActivity() {
                                 value = input,
                                 onValueChange = { input = it },
                                 enabled = true,
-                                placeholder = { Text(if (connectedPeers.isNotEmpty()) "Écrire un message…" else "Connecte-toi pour envoyer") },
+                                placeholder = { Text(if (connectedPeers.isNotEmpty()) getString(R.string.send_placeholder) else getString(R.string.new_message)) },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 3,
                                 shape = MaterialTheme.shapes.large,
@@ -641,17 +648,58 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             Button(
-                                onClick = { if (connectedPeers.isNotEmpty()) { sendMessage(input); input = "" } else { status = "Connecte-toi à un appareil avant d’envoyer un message." } },
-                                enabled = input.isNotBlank(),
+                                onClick = { if (connectedPeers.isNotEmpty()) { sendMessage(input); input = "" } else { status = getString(R.string.connect_before_send) } },
+                                enabled = input.isNotBlank() && roomAuthenticated,
                                 modifier = Modifier.size(52.dp),
                                 shape = androidx.compose.foundation.shape.CircleShape,
                                 contentPadding = PaddingValues(0.dp)
                             ) { Text("➤", style = MaterialTheme.typography.titleLarge) }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Garde l’app ouverte pour échanger", style = MaterialTheme.typography.labelLarge, color = ink)
+                            Text(getString(R.string.stay_open), style = MaterialTheme.typography.labelLarge, color = ink)
                         }
                     }
+                }
+                if (accessDialogOpen) {
+                    AlertDialog(
+                        onDismissRequest = { },
+                        title = { Text(getString(R.string.access_code_wrong)) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(getString(R.string.access_code_retry_hint))
+                                OutlinedTextField(
+                                    value = accessCodeInput,
+                                    onValueChange = { accessCodeInput = it.filter { ch -> ch in '0'..'9' }.take(4) },
+                                    label = { Text(getString(R.string.access_code_optional)) },
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (accessCodeInput.length == 4 && pendingAuthNonce.isNotBlank()) {
+                                    roomAccessCode = accessCodeInput
+                                    profilePreferences.edit().putString("room_access_code", accessCodeInput).apply()
+                                    val proof = authProof(accessCodeInput, pendingAuthNonce)
+                                    val response = JSONObject().put("type", "auth").put("proof", proof)
+                                    connectedPeers.firstOrNull()?.let { client.sendPayload(it, Payload.fromBytes(response.toString().toByteArray())) }
+                                    pendingAuthNonce = ""
+                                    awaitingCodeUpdate = false
+                                    accessDialogOpen = false
+                                }
+                            }, enabled = accessCodeInput.length == 4 && pendingAuthNonce.isNotBlank()) { Text(getString(R.string.retry)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                connectedPeers.toList().forEach { client.disconnectFromEndpoint(it) }
+                                connectedPeers.clear()
+                                awaitingCodeUpdate = false
+                                accessDialogOpen = false
+                            }) { Text(getString(R.string.close)) }
+                        }
+                    )
                 }
                 if (diagnosticOpen) {
                     val missing = missingPermissions()
@@ -661,23 +709,23 @@ class MainActivity : ComponentActivity() {
                     AlertDialog(
                         containerColor = androidx.compose.ui.graphics.Color.White,
                         onDismissRequest = { diagnosticOpen = false },
-                        title = { Text("Diagnostic de connexion") },
+                        title = { Text(getString(R.string.diagnostic)) },
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("${if (btOk) "✓" else "✗"} Bluetooth activé")
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) Text("${if (locationOk) "✓" else "✗"} Service de localisation activé (requis par Android 11 et antérieur)")
-                                Text("${if (missing.isEmpty()) "✓" else "✗"} Permissions des appareils à proximité${if (missing.isEmpty()) " accordées" else " manquantes"}")
-                                Text("${if (playOk) "✓" else "✗"} Google Play Services compatible")
-                                Text("Le diagnostic vérifie les prérequis visibles ; il ne garantit pas la détection ni la connexion. La compatibilité radio et les restrictions du téléphone peuvent aussi intervenir.", style = MaterialTheme.typography.bodySmall)
+                                Text(getString(R.string.diagnostic_bluetooth, if (btOk) "✓" else "✗"))
+                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) Text(getString(R.string.diagnostic_location, if (locationOk) "✓" else "✗"))
+                                Text(getString(R.string.diagnostic_permissions, if (missing.isEmpty()) "✓" else "✗", if (missing.isEmpty()) getString(R.string.permissions_granted_suffix) else getString(R.string.permissions_missing_suffix)))
+                                Text(getString(R.string.diagnostic_play, if (playOk) "✓" else "✗"))
+                                Text(getString(R.string.diagnostic_note), style = MaterialTheme.typography.bodySmall)
                             }
                         },
                         confirmButton = {
                             Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                                if (!btOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } }) { Text("Réglages Bluetooth") }
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && !locationOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } }) { Text("Activer la localisation") }
-                                if (missing.isNotEmpty()) TextButton(onClick = { diagnosticOpen = false; permissionLauncher.launch(missing.toTypedArray()) }) { Text("Autoriser les permissions") }
-                                if (!playOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:com.google.android.gms"))) } }) { Text("Réglages Google Play Services") }
-                                TextButton(onClick = { diagnosticOpen = false }) { Text("Fermer") }
+                                if (!btOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } }) { Text(getString(R.string.bluetooth_settings)) }
+                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && !locationOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } }) { Text(getString(R.string.enable_location)) }
+                                if (missing.isNotEmpty()) TextButton(onClick = { diagnosticOpen = false; permissionLauncher.launch(missing.toTypedArray()) }) { Text(getString(R.string.allow_permissions)) }
+                                if (!playOk) TextButton(onClick = { runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:com.google.android.gms"))) } }) { Text(getString(R.string.play_settings)) }
+                                TextButton(onClick = { diagnosticOpen = false }) { Text(getString(R.string.close)) }
                             }
                         }
                     )
@@ -688,9 +736,9 @@ class MainActivity : ComponentActivity() {
                         titleContentColor = navy,
                         textContentColor = ink,
                         onDismissRequest = { aboutOpen = false },
-                        confirmButton = { TextButton(onClick = { aboutOpen = false }) { Text("Fermer") } },
-                        title = { Text("À propos d’Espace Étudiant") },
-                        text = { Text("Cette application permet aux étudiants de se retrouver et d’échanger des messages à proximité sans Internet. Pour démarrer, une personne crée une connexion ; les autres la recherchent et demandent à la rejoindre. L’hôte doit rester proche et garder l’application ouverte. Le profil et les filières ajoutées sont enregistrés sur chaque téléphone. L’historique partagé, les messages privés, les vocaux et les appels ne sont pas encore disponibles.") }
+                        confirmButton = { TextButton(onClick = { aboutOpen = false }) { Text(getString(R.string.close)) } },
+                        title = { Text(getString(R.string.about_local)) },
+                        text = { Text(getString(R.string.entry_approach)) }
                     )
                 }
                 }
@@ -704,9 +752,13 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 HostConnectionService.ACTION_STATUS -> {
                     status = value
-                    if (value.contains("fermée") || value.contains("Échec de l’ouverture")) {
-                        isHost = false
-                        profilePreferences.edit().putBoolean("host_active", false).apply()
+                    when (intent.getStringExtra(HostConnectionService.EXTRA_STATE)) {
+                        HostConnectionService.STATE_ACTIVE -> { hostConnectionReady = true; if (isHost) roomAuthenticated = true }
+                        HostConnectionService.STATE_FAILED, HostConnectionService.STATE_CLOSED -> {
+                            hostConnectionReady = false
+                            isHost = false
+                            profilePreferences.edit().putBoolean("host_active", false).apply()
+                        }
                     }
                 }
                 HostConnectionService.ACTION_PEERS -> {
@@ -716,11 +768,11 @@ class MainActivity : ComponentActivity() {
                     connectedPeers.clear()
                     if (ids != null) for (i in 0 until ids.length()) connectedPeers.add(ids.optString(i))
                     else repeat(count) { connectedPeers.add("service-peer-$it") }
-                    if (count > 0) status = "Connecté à $count appareil(s)"
+                    if (count > 0) status = if (count == 1) getString(R.string.connected_one, count) else getString(R.string.connected_many, count)
                 }
                 HostConnectionService.ACTION_MESSAGE -> runCatching {
                     val obj = JSONObject(value)
-                    messages.add(ChatMessage(obj.optString("name", "Participant"), obj.optString("text", ""), obj.optLong("time", System.currentTimeMillis()), delivery = "Reçu"))
+                    messages.add(ChatMessage(obj.optString("name", getString(R.string.applicant)), obj.optString("text", ""), obj.optLong("time", System.currentTimeMillis()), delivery = getString(R.string.received)))
                 }
             }
         }
@@ -735,7 +787,7 @@ class MainActivity : ComponentActivity() {
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(hostReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(hostReceiver, filter)
         isHost = getSharedPreferences("student_profile", MODE_PRIVATE).getBoolean("host_active", isHost)
-        if (isHost) startService(Intent(this, HostConnectionService::class.java).setAction(HostConnectionService.ACTION_QUERY))
+        if (isHost) { hostConnectionReady = true; startService(Intent(this, HostConnectionService::class.java).setAction(HostConnectionService.ACTION_QUERY)) }
     }
 
     override fun onStop() {

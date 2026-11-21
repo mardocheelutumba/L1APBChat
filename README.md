@@ -1,25 +1,37 @@
-# L1 AP B – Tchat local (prototype 0.1)
+# Local Chat — prototype Android
 
-Projet de départ Android Studio en Kotlin/Jetpack Compose. Il utilise Google Nearby Connections pour rechercher et connecter des appareils proches sans Internet. L'hôte crée un groupe en étoile ; les membres envoient leurs messages à l'hôte, qui les relaie.
+Application de messagerie locale en développement, écrite en Kotlin avec Jetpack Compose et Google Nearby Connections. Elle permet à des appareils Android proches d’échanger sans connexion Internet, via un téléphone hôte qui relaie les messages.
 
-## Ouvrir le projet
-1. Installer Android Studio : https://developer.android.com/studio
-2. Ouvrir le dossier `L1APBChat` dans Android Studio et laisser Gradle synchroniser les dépendances.
-3. Connecter deux téléphones Android (ou plus) par USB, activer les options développeur et le débogage USB, puis lancer l'application sur chaque appareil.
-4. Autoriser les permissions Bluetooth et appareils à proximité. Sur les versions Android plus anciennes, autoriser la localisation demandée par le système.
-5. Sur un téléphone, saisir un nom et toucher « Créer le groupe ». Sur l'autre, saisir un nom, toucher « Rechercher », puis « Rejoindre » et accepter la demande sur l'hôte.
+## Utilisation prévue
 
-## État et limites
-- Ceci est un prototype de départ, pas une application publiée ni un APK prêt à distribuer.
-- Le code n'a pas été compilé ou testé sur de vrais téléphones dans cet environnement ; la synchronisation Gradle et les tests réels sont nécessaires avant usage.
-- Le groupe s'arrête lorsque l'hôte quitte l'application ou se déconnecte. L'hôte doit rester proche, avec l'application ouverte.
-- Les messages ne sont pas encore sauvegardés durablement ; l'historique affiché est temporaire.
-- Les appels, notes vocales, notifications, ajout/suppression de membres, authentification du groupe et protection contre l'usurpation de nom restent à développer. L'acceptation de connexion actuelle n'est pas une authentification forte.
-- Nearby Connections chiffre les transferts selon la documentation Google, mais cela ne remplace pas une authentification ni des tests de sécurité adaptés à une diffusion réelle.
-- Nécessite les services Google Play compatibles sur les appareils.
+1. Installer l’application sur des téléphones Android compatibles.
+2. Autoriser les permissions Bluetooth et appareils à proximité (la localisation peut être demandée sur d’anciennes versions d’Android).
+3. Sur un téléphone, enregistrer un pseudo et choisir un nom de salon, puis créer la connexion.
+4. Sur un autre, saisir le même nom de salon, rechercher la connexion, la rejoindre et accepter la demande sur l’hôte.
+5. L’hôte doit rester à proximité et garder la connexion active.
 
-## Bibliothèque
-`com.google.android.gms:play-services-nearby:19.5.1` (version mentionnée dans les notes de versions officielles Google Play services au moment de la préparation).
+Une organisation peut être renseignée dans le profil, mais elle est facultative. Le nom du salon est libre.
 
-Documentation officielle : https://developers.google.com/nearby/connections/overview
-Permissions Android : https://developers.google.com/nearby/connections/android/get-started
+## État réel et limites
+
+- Prototype en développement : il n’est ni publié ni prêt pour un déploiement sensible.
+- La CI compile les variantes debug et release. Cela ne remplace pas des essais sur de vrais téléphones ; aucun test appareil n’est revendiqué.
+- La release compilée par la CI n’est pas signée pour distribution.
+- La connexion Nearby et la reconnexion automatique n’ont pas encore été validées en usage réel.
+- La reconnexion reconnaît actuellement l’hôte par son nom affiché, qui peut être dupliqué ou imité.
+- L’acceptation de la demande n’est pas une authentification forte.
+- Le code facultatif à quatre chiffres est vérifié par défi-réponse HMAC avant l’admission d’un participant et le relais de ses messages. Après un code erroné, l’application permet de réessayer ; trois erreurs ferment la connexion. La reconnexion redemande le code.
+- Le code est conservé dans les préférences locales de l’application. Quatre chiffres sont faciles à deviner ; le mécanisme est une barrière informelle, pas une sécurité forte ni une protection contre un appareil compromis. La fonction est expérimentale et n’a pas été testée sur plusieurs téléphones.
+- L’historique est temporaire et n’est pas sauvegardé durablement.
+- Les messages privés, vocaux et les appels restent à développer.
+- Nearby Connections chiffre les transferts selon la documentation Google, mais cela ne remplace pas l’authentification, les tests de sécurité ni une architecture de production.
+- L’application requiert des services Google Play compatibles.
+
+## Projet
+
+- Identifiant d’application : `cd.localchat.app`.
+- Kotlin/Jetpack Compose ; Android minimum : API 24.
+- Dépendance Nearby Connections : `com.google.android.gms:play-services-nearby:19.3.0` (version déclarée dans le projet).
+- Interface en cours de localisation en français et en anglais selon la langue de l’appareil.
+
+Documentation Google : https://developers.google.com/nearby/connections/overview
