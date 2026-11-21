@@ -44,3 +44,29 @@ Accès non authentifié; lecture d’un salon par non-membre; énumération des 
 ## Référence de déploiement
 
 Cette proposition dans le dépôt ne change aucun paramètre Firebase distant. Aucune commande de déploiement ne doit être lancée avant revue et approbation explicite, et aucun déploiement permissif n’est autorisé par le seul consentement au stockage. Tous les tests doivent utiliser `demo-local-chat-hybride-rules`, des identifiants fictifs et les émulateurs locaux.
+
+
+## Proposition de protocole fermé et critères d’arrêt (non approuvés)
+
+Cette section formalise une **proposition à examiner**, non une instruction de déploiement. L’accord de préparer le protocole n’est pas l’accord de déployer `firestore.rules`, d’activer Firebase Auth distant ou d’inscrire de vrais utilisateurs. Aucun changement de règles distantes n’est effectué par ce document.
+
+### Essai autorisé par défaut : local uniquement
+
+- Projet d’émulateur de démonstration : `demo-local-chat-hybride-rules`; aucun endpoint Firebase distant.
+- Quatre identités fictives maximum (un hôte, deux membres, un non-membre), deux salles maximum, dix messages par identité maximum et cinquante messages au total. Identifiants sur `example.invalid`; aucun vrai nom, e-mail, mot de passe, contenu personnel ou donnée d’étudiant.
+- Durée maximale proposée : cinq jours. Jour 1 exécution des tests automatisés et vérification de la configuration locale; jours 2–3 parcours manuel; jour 4 révocation et simulation de signalement; jour 5 suppression complète des données locales et compte rendu agrégé. Arrêt immédiat en cas de fuite vers Firebase réel, accès inattendu, contenu personnel ou suspicion d’abus.
+- À la clôture, effacer les utilisateurs de l’émulateur et les documents, ne conserver aucune exportation ni contenu de chat, arrêter les émulateurs et documenter seulement les résultats agrégés.
+
+Ces chiffres sont des **limites de test proposées**, et non des quotas déjà acceptés ni des garanties techniques. La configuration actuelle et les règles candidates n’imposent pas de quotas de créations, membres, messages ou durée. Ne pas transformer les plafonds manuels ci-dessus en promesse de protection.
+
+### Suppression, signalement et modération
+
+Le pilote local ne comporte ni bouton de signalement, ni modération automatisée, ni procédure d’auto-suppression accessible dans le client. Proposition de traitement manuel : signalement directement au responsable de l’essai, hors application; le responsable suspend le parcours, ferme la salle ou révoque l’adhésion, note la catégorie et le traitement sans recopier le message, puis détruit tout l’état local à la clôture. Tout incident d’accès ou de confidentialité arrête le pilote entier.
+
+Aucun essai cloud n’est autorisé ici. Pour une proposition future seulement, une conservation maximale de sept jours suivie d’une suppression de tous les comptes d’essai et documents dans les 24 heures après clôture pourrait être étudiée, avec vérification manuelle Auth + Firestore et preuve de clôture sans contenu personnel. Cette procédure n’est pas implémentée : la suppression d’un document parent Firestore n’efface pas automatiquement les sous-collections; il manque également un mécanisme sûr de suppression de compte et de purge contrôlée. Il faut concevoir et tester une voie complète avant toute création de données réelles.
+
+### Limites de maîtrise gratuite : décision de sécurité actuelle
+
+Les règles Firestore autorisent ou refusent des opérations; elles ne constituent pas une limitation robuste du débit ni une garantie de plafond global. Le client ne peut pas empêcher un utilisateur de contourner ses propres compteurs, et une application publique peut exposer un projet Spark à l’épuisement de quotas. Les règles ne suppriment ni les copies déjà téléchargées ni les données conservées localement. Aucun backend de confiance, Cloud Function, service payant ou mécanisme indépendant de modération n’est prévu et il ne faut pas en ajouter sans demande et approbation spécifiques.
+
+En conséquence, le seul essai actuellement recommandé est celui des émulateurs locaux sans vrais comptes ni données. Un éventuel essai Firebase distant doit rester bloqué jusqu’à une approbation distincte portant sur les règles exactes, l’application du plafond, la méthode de suppression vérifiable, les comptes et dates, le traitement des signalements et l’acceptation explicite des limites de quotas/coûts. Le présent protocole n’autorise aucun déploiement, aucune activation de facturation/SMS et aucun démarrage d’essai cloud.
