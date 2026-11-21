@@ -29,6 +29,8 @@ for operation in ['createRoom','requestJoin','approve','sendMessage','listenRoom
     assert operation in client, f'missing client flow {operation}'
 assert 'allow read, write: if false' not in rules, 'candidate rules must include tested authorized flows'
 assert 'request.auth.uid' in rules and 'getAfter' in rules and 'hasOnly' in rules
+assert 'resource.data.uid == request.auth.uid' in rules
+assert 'resource.data.resource.data.uid' not in rules, 'reject invalid nested resource reference'
 assert 'allow update, delete: if false' in rules
 assert 'Auth Emulator' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8')
 assert 'production' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8').lower()

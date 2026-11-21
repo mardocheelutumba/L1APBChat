@@ -69,7 +69,7 @@ service cloud.firestore {
 
       match /members/{uid} {
         allow get, list: if signedIn() && (
-          resource.data.resource.data.uid == request.auth.uid || isHost(roomId)
+          resource.data.uid == request.auth.uid || isHost(roomId)
         );
         // Host membership is paired atomically with room creation; regular member
         // membership is paired atomically with host approval of their request.
