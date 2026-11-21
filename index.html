@@ -12,6 +12,8 @@
     @media(max-width:800px){.hero{padding:55px 0 44px}.hero-grid,.truth,.app-grid{grid-template-columns:1fr;gap:30px}.visual{min-height:330px}.cards{grid-template-columns:1fr 1fr}.section{padding:58px 0}.app-intro h2{font-size:2rem}.nav{height:63px}.navlinks{gap:14px}.navlinks a:not(.nav-cta){display:none}}
     @media(max-width:520px){.wrap{width:min(100% - 28px,1120px)}.nav-cta{padding:9px 11px;font-size:.83rem}.hero h1{font-size:2.8rem}.hero-grid{gap:28px}.visual{padding:20px;min-height:310px;border-radius:24px}.chat-card{margin-top:36px;padding:15px}.cards,.faq{grid-template-columns:1fr}.section{padding:48px 0}.panel{padding:19px;border-radius:19px}.auth-card{padding:17px}.footer-row{align-items:flex-start;flex-direction:column;gap:8px}}
     @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
+  
+    .chat-tools{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fbfaf5}.chat-tools h3,.chat-tools h4{margin:6px 0 10px}.chat-tools input{max-width:100%;margin:5px;padding:10px;border:1px solid #cfd4cc;border-radius:9px}.chat-tools button{margin:5px}.chat-messages{max-height:340px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:12px;background:#fff}.chat-messages article{margin:10px 0;padding:9px 12px}.chat-messages small{display:block;color:var(--muted);font-size:.72rem;margin-top:5px}
   </style>
 </head>
 <body>
@@ -58,11 +60,11 @@
       </div>
     </div></section>
     <section class="message-area" id="messagerie"><div class="wrap"><div class="panel app-grid">
-      <div class="app-intro"><span class="eyebrow">Espace web</span><h2>La connexion n’est pas encore prête.</h2><p style="color:var(--muted)">L’authentification prévue est par adresse e-mail et mot de passe. Elle ne nécessite pas de SMS. Les messages ne seront pas disponibles tant qu’un backend et des règles d’accès sûres ne sont pas établis.</p>
+      <div class="app-intro"><span class="eyebrow">Espace web</span><h2>Banc d’essai local : comptes, salles et messages.</h2><p style="color:var(--muted)">Cette interface ne s’active que si Auth et Firestore sont tous deux reliés aux émulateurs sur votre appareil. Elle n’utilise aucun service de production et ne nécessite pas de SMS. Les messages ne seront pas disponibles tant qu’un backend et des règles d’accès sûres ne sont pas établis.</p>
         <div class="status" id="backend-status" role="status"><span class="lock" aria-hidden="true">◷</span><div><strong>Configuration Firebase manquante</strong>La connexion et la création de compte sont désactivées sur cette version.</div></div>
-        <p class="fineprint">Même après activation de l’authentification, cela ne suffira pas à créer une messagerie : Firestore reste verrouillé par défaut.</p>
+        <p class="fineprint">Les règles Firestore candidates sont réservées aux tests locaux. Elles ne sont pas déployées et attendent encore une revue puis une approbation explicite.</p>
       </div>
-      <div class="auth-card" aria-labelledby="auth-title"><h3 id="auth-title">Connexion e-mail</h3><p>Les commandes seront activées uniquement avec une configuration Firebase valide.</p>
+      <div class="auth-card" aria-labelledby="auth-title"><h3 id="auth-title">Connexion e-mail</h3><p>Les commandes restent désactivées sans une configuration explicite pointant vers les deux émulateurs localhost.</p>
         <form id="auth-form" autocomplete="on" novalidate>
           <div class="field"><label for="email">Adresse e-mail</label><input id="email" name="email" type="email" autocomplete="email" placeholder="nom@exemple.com" required disabled></div>
           <div class="field"><label for="password">Mot de passe</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Saisir votre mot de passe" required disabled></div>
@@ -70,51 +72,20 @@
           <button class="inline-link" type="button" id="reset" disabled>Mot de passe oublié ?</button>
         </form>
         <div class="notice" id="auth-notice" role="status" aria-live="polite" hidden></div>
-        <p class="fineprint">Aucun mot de passe n’est enregistré dans cette page. Firebase Auth n’est chargé qu’après configuration. Les champs restent inactifs tant qu’elle manque.</p>
+        <p class="fineprint">N’utilisez que des comptes fictifs dans les émulateurs. Ne saisissez pas vos identifiants réels ici. Le site public n’est pas activé.</p>
       </div>
     </div></div></section>
     <section class="section white" id="questions"><div class="wrap"><div class="section-head"><span class="eyebrow">Questions fréquentes</span><h2>Pour savoir où l’on en est.</h2></div>
       <div class="faq">
-        <details><summary>Est-ce que je peux envoyer un message depuis ce site ?</summary><p>Non. Le formulaire de chat n’est pas actif et aucun message web n’est envoyé. Il n’existe pas encore de service web de messages.</p></details>
+        <details><summary>Est-ce que je peux envoyer un message depuis ce site ?</summary><p>Le chat fonctionne uniquement dans le banc d’essai local, avec Auth et Firestore Emulator démarrés. Le site publié reste désactivé et n’envoie aucun message.</p></details>
         <details><summary>Le navigateur peut-il rejoindre un salon Nearby ?</summary><p>Non. Nearby est une fonctionnalité expérimentale de l’application Android. Ce site ne prétend pas la prendre en charge.</p></details>
-        <details><summary>Pourquoi les boutons de connexion sont-ils désactivés ?</summary><p>La configuration Firebase n’est pas livrée avec le site. Sans configuration vérifiée, aucun compte ne peut être créé ou authentifié.</p></details>
+        <details><summary>Pourquoi les boutons de connexion sont-ils désactivés ?</summary><p>La configuration locale des émulateurs n’est volontairement pas livrée. La page publique n’active ni authentification ni Firestore.</p></details>
         <details><summary>Des frais ou des SMS sont-ils nécessaires ?</summary><p>Le projet privilégie l’authentification e-mail/mot de passe et Firebase Spark. Aucun paiement, forfait, SMS ou activation de facturation n’est demandé par cette version.</p></details>
       </div>
     </div></section>
   </main>
   <footer class="footer"><div class="wrap footer-row"><span>Local Chat · Projet en développement · État transparent</span><a href="https://github.com/mardocheelutumba/L1APBChat/tree/web-messagerie" rel="noreferrer">Code source de cette branche</a></div></footer>
-  <script>
-    // Optional public Firebase web config. Deliberately blank: no project config or secret is committed.
-    // If configured by the maintainer, this enables Firebase email/password Auth only. It does not enable chat.
-    window.LOCAL_CHAT_FIREBASE_CONFIG = window.LOCAL_CHAT_FIREBASE_CONFIG || null;
-    (async function initEmailAuth(){
-      const cfg=window.LOCAL_CHAT_FIREBASE_CONFIG;
-      const configReady=!!(cfg&&cfg.apiKey&&cfg.authDomain&&cfg.projectId&&cfg.appId);
-      const form=document.getElementById('auth-form');
-      const notice=document.getElementById('auth-notice');
-      const status=document.getElementById('backend-status');
-      const reset=document.getElementById('reset');
-      const setNotice=(text,error=false)=>{notice.textContent=text;notice.hidden=false;notice.classList.toggle('error',error)};
-      if(!configReady)return;
-      try{
-        const appMod=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
-        const authMod=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
-        const app=appMod.initializeApp(cfg);
-        const auth=authMod.getAuth(app);
-        if(cfg.authEmulator)authMod.connectAuthEmulator(auth,cfg.authEmulator,{disableWarnings:true});
-        form.querySelectorAll('input,button').forEach(el=>el.disabled=false);reset.disabled=false;
-        status.innerHTML='<span class="lock" aria-hidden="true">✓</span><div><strong>Configuration d’authentification détectée</strong>Connexion Firebase e-mail seulement. La messagerie reste désactivée.</div>';
-        form.addEventListener('submit',async e=>{
-          e.preventDefault();const data=new FormData(form);const email=String(data.get('email')||'').trim();const password=String(data.get('password')||'');const mode=e.submitter?.value||'login';
-          if(!email||!password){setNotice('Saisissez une adresse e-mail et un mot de passe.',true);return}
-          const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
-          try{if(mode==='register'){await authMod.createUserWithEmailAndPassword(auth,email,password);setNotice('Compte Firebase créé. Les messages restent désactivés : aucun backend de chat n’est configuré.')}else{await authMod.signInWithEmailAndPassword(auth,email,password);setNotice('Authentification réussie. Les messages restent désactivés : aucun backend de chat n’est configuré.')}}
-          catch(err){const messages={'auth/email-already-in-use':'Cette adresse possède déjà un compte.','auth/invalid-email':'Adresse e-mail invalide.','auth/weak-password':'Mot de passe trop faible.','auth/invalid-credential':'Adresse e-mail ou mot de passe incorrect.','auth/too-many-requests':'Trop de tentatives. Réessayez plus tard.'};setNotice(messages[err.code]||'Connexion impossible. Vérifiez la configuration Firebase et réessayez.',true)}
-          finally{buttons.forEach(b=>b.disabled=false)}
-        });
-        reset.addEventListener('click',async()=>{const email=document.getElementById('email').value.trim();if(!email){setNotice('Saisissez d’abord votre adresse e-mail.',true);return}try{await authMod.sendPasswordResetEmail(auth,email);setNotice('Si cette adresse est enregistrée, Firebase enverra les instructions de réinitialisation.')}catch(err){setNotice(err.code==='auth/invalid-email'?'Adresse e-mail invalide.':'Impossible de demander la réinitialisation. Vérifiez Firebase.',true)}});
-      }catch(err){status.innerHTML='<span class="lock" aria-hidden="true">!</span><div><strong>Authentification indisponible</strong>La configuration existe, mais Firebase Auth ne s’est pas chargé. Vérifiez le réseau et la configuration.</div>';setNotice('Firebase Auth ne peut pas être initialisé dans cet environnement.',true)}
-    })();
-  </script>
+  <script src="./web/local-config.js"></script>
+  <script type="module" src="./web-messenger.js"></script>
 </body>
 </html>

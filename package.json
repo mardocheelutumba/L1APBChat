@@ -1,9 +1,12 @@
 {
-  "name": "local-chat-firestore-rules-tests",
+  "name": "local-chat-web-emulator-tests",
   "private": true,
-  "description": "Emulator tests for the deny-by-default Firestore rules used by the experimental Android chat.",
+  "type": "module",
+  "description": "Local-only Firebase Auth/Firestore web prototype and Firestore Rules Emulator tests.",
   "scripts": {
-    "test:rules": "firebase emulators:exec --only firestore --project demo-local-chat-hybride-rules \"node --test tests/firestore.rules.test.js\""
+    "test:web": "python3 test_web_smoke.py",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-local-chat-hybride-rules \"node --test tests/firestore.rules.test.js\"",
+    "test": "npm run test:web && npm run test:rules"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

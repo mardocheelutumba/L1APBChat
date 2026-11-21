@@ -1,12 +1,132 @@
-// Firebase Firestore rules for the experimental branch.
-// Intentionally fail closed: no client, signed in or otherwise, can read or write.
-// Keep the deployed Firebase project's deny-all rules unchanged until an
-// authenticated membership model is implemented and validated with the Rules Emulator.
+// Review candidate for local emulator tests ONLY. Not approved for production deployment.
+// There is deliberately no Admin SDK and no callable/server functions.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    function signedIn() { return request.auth != null; }
+    function roomPath(roomId) { return /databases/$(database)/documents/rooms/$(roomId); }
+    function memberPath(roomId, uid) { return /databases/$(database)/documents/rooms/$(roomId)/members/$(uid); }
+    function requestPath(roomId, uid) { return /databases/$(database)/documents/rooms/$(roomId)/joinRequests/$(uid); }
+    function hasActiveMembership(roomId) {
+      return signedIn()
+        && exists(memberPath(roomId, request.auth.uid))
+        && get(memberPath(roomId, request.auth.uid)).data.uid == request.auth.uid
+        && get(memberPath(roomId, request.auth.uid)).data.state == 'active';
     }
+    function isHost(roomId) {
+      return hasActiveMembership(roomId)
+        && get(memberPath(roomId, request.auth.uid)).data.role == 'host';
+    }
+    function validRoom(data, roomId) {
+      return data.keys().hasAll(['title', 'createdBy', 'createdAt', 'state', 'schemaVersion'])
+        && data.keys().hasOnly(['title', 'createdBy', 'createdAt', 'state', 'schemaVersion'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 80
+        && data.createdBy == request.auth.uid
+        && data.createdAt == request.time
+        && data.state == 'open'
+        && data.schemaVersion == 1;
+    }
+    function validMember(data, uid, role) {
+      return data.keys().hasAll(['uid', 'role', 'state', 'joinedAt', 'displayName'])
+        && data.keys().hasOnly(['uid', 'role', 'state', 'joinedAt', 'displayName'])
+        && data.uid == uid && data.role == role && data.state == 'active'
+        && data.joinedAt == request.time
+        && data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 40;
+    }
+    function validPendingRequest(data, uid) {
+      return data.keys().hasAll(['uid', 'state', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'state', 'createdAt', 'updatedAt'])
+        && data.uid == uid && data.state == 'pending'
+        && data.createdAt == request.time && data.updatedAt == request.time;
+    }
+    function validMessage(data) {
+      return data.keys().hasAll(['senderUid', 'body', 'createdAt', 'schemaVersion'])
+        && data.keys().hasOnly(['senderUid', 'body', 'createdAt', 'schemaVersion'])
+        && data.senderUid == request.auth.uid
+        && data.body is string && data.body.size() > 0 && data.body.size() <= 4000
+        && data.createdAt == request.time && data.schemaVersion == 1;
+    }
+
+    match /rooms/{roomId} {
+      // Room and initial host must be created in the same atomic write/batch.
+      allow create: if signedIn()
+        && validRoom(request.resource.data, roomId)
+        && existsAfter(memberPath(roomId, request.auth.uid))
+        && getAfter(memberPath(roomId, request.auth.uid)).data.uid == request.auth.uid
+        && getAfter(memberPath(roomId, request.auth.uid)).data.role == 'host'
+        && getAfter(memberPath(roomId, request.auth.uid)).data.state == 'active';
+      allow get: if hasActiveMembership(roomId);
+      // No collection-wide room listing: discover owned/joined rooms by the caller's
+      // membership collection-group query (uid == auth.uid), then read each room.
+      allow list: if false;
+      allow update: if isHost(roomId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state'])
+        && request.resource.data.state in ['open', 'closed'];
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow get, list: if signedIn() && (
+          resource.data.resource.data.uid == request.auth.uid || isHost(roomId)
+        );
+        // Host membership is paired atomically with room creation; regular member
+        // membership is paired atomically with host approval of their request.
+        allow create: if signedIn() && validMember(request.resource.data, uid, request.resource.data.role)
+          && uid == request.resource.data.uid
+          && (
+            (request.resource.data.role == 'host'
+              && existsAfter(roomPath(roomId))
+              && getAfter(roomPath(roomId)).data.createdBy == request.auth.uid
+              && uid == request.auth.uid)
+            ||
+            (request.resource.data.role == 'member'
+              && isHost(roomId)
+              && existsAfter(requestPath(roomId, uid))
+              && getAfter(requestPath(roomId, uid)).data.uid == uid
+              && getAfter(requestPath(roomId, uid)).data.state == 'approved')
+          );
+        // Only the host may revoke a regular member. Role/UID/timestamp are immutable.
+        allow update: if isHost(roomId)
+          && resource.data.role == 'member'
+          && resource.data.state == 'active'
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.displayName == resource.data.displayName
+          && request.resource.data.state == 'revoked'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state']);
+        allow delete: if false;
+      }
+
+      match /joinRequests/{uid} {
+        // Requester can only read their own request; host can list to moderate.
+        allow get, list: if signedIn() && (resource.data.uid == request.auth.uid || isHost(roomId));
+        allow create: if signedIn() && uid == request.auth.uid
+          && exists(roomPath(roomId))
+          && get(roomPath(roomId)).data.state == 'open'
+          && !exists(memberPath(roomId, request.auth.uid))
+          && validPendingRequest(request.resource.data, uid);
+        // In a transaction/batch, the host may only move pending -> approved/rejected.
+        allow update: if isHost(roomId)
+          && resource.data.uid == uid && resource.data.state == 'pending'
+          && request.resource.data.uid == uid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.state in ['approved', 'rejected']
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow get, list: if hasActiveMembership(roomId)
+          && get(roomPath(roomId)).data.state == 'open';
+        allow create: if hasActiveMembership(roomId)
+          && get(roomPath(roomId)).data.state == 'open'
+          && validMessage(request.resource.data);
+        // Messages are immutable; edit/delete requires a separately designed moderation flow.
+        allow update, delete: if false;
+      }
+    }
+
+    // All other collections/documents are denied implicitly.
   }
 }
