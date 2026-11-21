@@ -39,7 +39,7 @@ async function createRoom(uid='host', room='room-alpha') {
 async function makeJoinRequest(uid='guest', room='room-alpha') {
   const db = dbFor(uid);
   await assertSucceeds(setDoc(requestRef(db, room, uid), {
-    uid, state: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    uid, displayName: 'Testeur', state: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
   return db;
 }
@@ -48,7 +48,7 @@ async function approve(uid='guest', room='room-alpha') {
   const batch = writeBatch(db);
   batch.update(requestRef(db, room, uid), { state: 'approved', updatedAt: serverTimestamp() });
   batch.set(memberRef(db, room, uid), {
-    uid, role: 'member', state: 'active', joinedAt: serverTimestamp(), displayName: 'Invité',
+    uid, role: 'member', state: 'active', joinedAt: serverTimestamp(), displayName: 'Testeur',
   });
   await assertSucceeds(batch.commit());
 }
@@ -69,7 +69,7 @@ test('approved member can read room and exchange immutable messages', async () =
   const own = await assertSucceeds(getDoc(memberRef(db, 'room-alpha', 'guest')));
   assert.equal(own.data().role, 'member');
   await assertSucceeds(setDoc(messageRef(db), {
-    senderUid: 'guest', body: 'Bonjour', createdAt: serverTimestamp(), schemaVersion: 1,
+    senderUid: 'guest', senderName: 'Testeur', body: 'Bonjour', createdAt: serverTimestamp(), schemaVersion: 1,
   }));
   const messages = await assertSucceeds(getDocs(collection(db, 'rooms/room-alpha/messages')));
   assert.equal(messages.size, 1);
@@ -80,8 +80,8 @@ test('unauthenticated users cannot read or write room data', async () => {
   const db = env.unauthenticatedContext().firestore();
   await assertFails(getDoc(roomRef(db)));
   await assertFails(getDocs(collection(db, 'rooms/room-alpha/messages')));
-  await assertFails(setDoc(messageRef(db), { senderUid: 'guest', body: 'x', createdAt: serverTimestamp(), schemaVersion: 1 }));
-  await assertFails(setDoc(requestRef(db), { uid: 'guest', state: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(messageRef(db), { senderUid: 'guest', senderName: 'Testeur', body: 'x', createdAt: serverTimestamp(), schemaVersion: 1 }));
+  await assertFails(setDoc(requestRef(db), { uid: 'guest', displayName: 'Testeur', state: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp() }));
 });
 
 test('knowing a room ID only permits a request; it does not reveal room or messages', async () => {
@@ -133,16 +133,16 @@ test('messages reject spoofed senders, oversized payloads, edits and deletes', a
   await createRoom();
   const host = dbFor('host');
   await assertFails(setDoc(messageRef(host), {
-    senderUid: 'other-user', body: 'spoof', createdAt: serverTimestamp(), schemaVersion: 1,
+    senderUid: 'other-user', senderName: 'Hôte', body: 'spoof', createdAt: serverTimestamp(), schemaVersion: 1,
   }));
   await assertFails(setDoc(messageRef(host), {
-    senderUid: 'host', body: 'x'.repeat(4001), createdAt: serverTimestamp(), schemaVersion: 1,
+    senderUid: 'host', senderName: 'Hôte', body: 'x'.repeat(4001), createdAt: serverTimestamp(), schemaVersion: 1,
   }));
   await assertFails(setDoc(messageRef(host), {
-    senderUid: 'host', body: 'secret', createdAt: serverTimestamp(), schemaVersion: 1, extra: 'no',
+    senderUid: 'host', senderName: 'Hôte', body: 'secret', createdAt: serverTimestamp(), schemaVersion: 1, extra: 'no',
   }));
   await assertSucceeds(setDoc(messageRef(host), {
-    senderUid: 'host', body: 'valid', createdAt: serverTimestamp(), schemaVersion: 1,
+    senderUid: 'host', senderName: 'Hôte', body: 'valid', createdAt: serverTimestamp(), schemaVersion: 1,
   }));
   await assertFails(updateDoc(messageRef(host), { body: 'changed' }));
   await assertFails((await import('firebase/firestore')).deleteDoc(messageRef(host)));
@@ -156,7 +156,7 @@ test('host can revoke a member; revoked member loses room and message access', a
   await assertFails(getDoc(roomRef(guest)));
   await assertFails(getDocs(collection(guest, 'rooms/room-alpha/messages')));
   await assertFails(setDoc(messageRef(guest, 'room-alpha', 'after-revoke'), {
-    senderUid: 'guest', body: 'still here?', createdAt: serverTimestamp(), schemaVersion: 1,
+    senderUid: 'guest', senderName: 'Testeur', body: 'still here?', createdAt: serverTimestamp(), schemaVersion: 1,
   }));
   await assertFails(updateDoc(memberRef(guest, 'room-alpha', 'guest'), { state: 'active' }));
 });
