@@ -30,7 +30,7 @@ for operation in ['createRoom','requestJoin','approve','sendMessage','listenRoom
 assert 'allow read, write: if false' not in rules, 'candidate rules must include tested authorized flows'
 assert 'request.auth.uid' in rules and 'getAfter' in rules and 'hasOnly' in rules
 assert 'allow update, delete: if false' in rules
-assert 'Firebase Emulator' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8')
+assert 'Auth Emulator' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8')
 assert 'production' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8').lower()
 assert 'local-config.js' in html and (ROOT/'.gitignore').read_text().find('web/local-config.js')>=0
 print('PASS: HTML and client static checks; auth+chat code is emulator-only; security rules include paired writes; no runtime test claimed.')
