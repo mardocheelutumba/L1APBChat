@@ -78,7 +78,7 @@ try {
   await assertEmulatorDeniesRoomRead('outsider@example.test', roomCode);
   await fillAndClick(outsider, {
     'Code de salle': roomCode,
-    'Votre nom affiché pour la demande': 'Intrus',
+    'Nom affiché pour la demande': 'Intrus',
   }, 'Envoyer une demande');
   await outsider.getByText(/Demande transmise/).waitFor({ timeout: 30000 });
   await host.getByRole('button', { name: 'Refuser', exact: true }).waitFor({ timeout: 30000 });
@@ -90,7 +90,7 @@ try {
   await register(guest, 'guest@example.test', 'Invité');
   await fillAndClick(guest, {
     'Code de salle': roomCode,
-    'Votre nom affiché pour la demande': 'Invité',
+    'Nom affiché pour la demande': 'Invité',
   }, 'Envoyer une demande');
   await guest.getByText(/Demande transmise/).waitFor({ timeout: 30000 });
   await host.getByRole('button', { name: 'Accepter', exact: true }).waitFor({ timeout: 30000 });
@@ -116,7 +116,7 @@ try {
   await guest.getByText(/Accès refusé par les règles Firestore/).waitFor({ timeout: 30000 });
   await guest.getByRole('button', { name: 'Retour à mes salles', exact: true }).click();
   await guest.getByLabel('Code de salle').fill(roomCode);
-  await guest.getByLabel('Votre nom affiché pour la demande', { exact: true }).fill('Invité');
+  await guest.getByLabel('Nom affiché pour la demande', { exact: true }).fill('Invité');
   await guest.getByRole('button', { name: 'Envoyer une demande', exact: true }).click();
   await guest.getByText(/Accès refusé par les règles Firestore/).waitFor({ timeout: 30000 });
 
