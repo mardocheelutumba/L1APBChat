@@ -137,6 +137,13 @@ if (!safeConfig) {
           snap.forEach((item)=>{const wrap=h('div');const label=h('span',{},`${item.data().displayName} · UID ${item.data().uid} `);const yes=h('button',{type:'button',className:'button'},'Accepter');const no=h('button',{type:'button',className:'button ghost'},'Refuser');
             yes.addEventListener('click',()=>decide(item.id,true,item.data().displayName).catch(showError));no.addEventListener('click',()=>decide(item.id,false,item.data().displayName).catch(showError));wrap.append(label,yes,no);pending.append(wrap);});
         },showError);state.cleanups.push(offReq);panel.append(pending);
+        const activeMembers=h('div');activeMembers.append(h('h4',{},'Membres actifs'));
+        const membersQuery=dbSdk.query(dbSdk.collection(db,`rooms/${roomId}/members`),dbSdk.where('role','==','member'),dbSdk.where('state','==','active'));
+        const offMembers=dbSdk.onSnapshot(membersQuery,(snap)=>{
+          activeMembers.replaceChildren(h('h4',{},'Membres actifs'));
+          if(!snap.size)activeMembers.append(h('p',{},'Aucun membre invité pour le moment.'));
+          snap.forEach((item)=>{const row=h('div');const name=item.data().displayName;row.append(h('span',{},`${name} `));const revoke=h('button',{type:'button',className:'button ghost'},`Révoquer ${name}`);revoke.addEventListener('click',()=>dbSdk.updateDoc(item.ref,{state:'revoked'}).catch(showError));row.append(revoke);activeMembers.append(row);});
+        },showError);state.cleanups.push(offMembers);panel.append(activeMembers);
         async function decide(uid,accept,displayName){const batch=dbSdk.writeBatch(db);const req=dbSdk.doc(db,`rooms/${roomId}/joinRequests/${uid}`);batch.update(req,{state:accept?'approved':'rejected',updatedAt:dbSdk.serverTimestamp()});if(accept)batch.set(dbSdk.doc(db,`rooms/${roomId}/members/${uid}`),{uid,role:'member',state:'active',joinedAt:dbSdk.serverTimestamp(),displayName});await batch.commit();}
       }
       async function sendMessage(){const body=input.value.trim();if(!body)return;const ref=dbSdk.doc(db,`rooms/${roomId}/messages`,crypto.randomUUID());await dbSdk.setDoc(ref,{senderUid:state.user.uid,senderName:membership.displayName,body,createdAt:dbSdk.serverTimestamp(),schemaVersion:1});input.value='';}

@@ -6,11 +6,13 @@
   "scripts": {
     "test:web": "python3 test_web_smoke.py",
     "test:rules": "firebase emulators:exec --only firestore --project demo-local-chat-hybride-rules \"node --test tests/firestore.rules.test.js\"",
-    "test": "npm run test:web && npm run test:rules"
+    "test": "npm run test:web && npm run test:rules",
+    "test:e2e": "node tests/web.e2e.test.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
     "firebase": "^11.0.0",
-    "firebase-tools": "^13.29.2"
+    "firebase-tools": "^13.29.2",
+    "playwright": "^1.55.0"
   }
 }
