@@ -25,9 +25,10 @@ Ne pas remplacer les endpoints par ceux du projet Firebase réel. Une configurat
 
 ## Tests et limites de validation
 
-- `npm run test:rules` lance Firestore Rules Emulator et des tests `@firebase/rules-unit-testing` : chemin autorisé création salle/hôte, demande, approbation atomique, lecture/écriture membre, découverte de ses adhésions, puis cas négatifs (non authentifié, non-membre, code de salle seul, lecture/énumération, auto-promotion/UID usurpé, création partielle, approbation non autorisée, message usurpé/mal formé/trop long/édité, révocation).
-- `npm run test:web` exécute des contrôles statiques HTML/JS. Ils ne prouvent ni fonctionnement du navigateur ni intégration de bout en bout.
-- Tant que Node/Java et l’émulateur ne sont pas exécutés, aucune réussite des tests n’est revendiquée. CI pourra vérifier la compilation des règles et les tests après commit.
+- `npm run test:rules` lance Firestore Rules Emulator et des tests `@firebase/rules-unit-testing` : création atomique salle/hôte, demande et approbation, lecture/écriture, découverte des propres adhésions via collection-group, et refus (non authentifié, non-membre, code seul, énumération, auto-promotion/usurpation, création ou approbation partielle, messages invalides/édités, révocation).
+- `npm run test:web` exécute des contrôles statiques HTML/JS et un contrôle anti-régression sur la référence `resource.data.uid`. Ces tests ne prouvent ni le fonctionnement interactif du navigateur ni l’intégration de bout en bout.
+- Le workflow GitHub Actions `Vérification du prototype web et des règles candidates` a réussi sur la branche `web-messagerie` : vérifications statiques et suite Firestore Rules Emulator sur le projet de démonstration `demo-local-chat-hybride-rules`.
+- Cette réussite CI ne remplace pas un essai manuel du parcours web dans un navigateur : aucun test interactif de navigateur ni test de production n’est revendiqué.
 - Il n’existe pas de limitation de débit, quota de création de salons/demandes/messages, signalement, modération ni serveur de confiance. Les règles seules ne donnent pas de limitation robuste anti-abus. Un projet Spark gratuit reste exposé à une consommation abusive de ses quotas; la mise en ligne publique doit attendre un contrôle anti-abus et une revue.
 - Pas de confirmation d’e-mail, de politique de conservation, de suppression de compte/données, de gestion d’appareil ou de récupération testée. Pas de synchronisation avec l’application Android, de pièce jointe, d’appel ou de notifications.
 
