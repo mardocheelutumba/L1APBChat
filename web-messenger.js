@@ -59,8 +59,9 @@ if (!safeConfig) {
       roomBox.append(title,nickname,create);
       const join=h('section'); join.className='chat-tools'; join.append(h('h3',{},'Demander l’accès à une salle'));
       const code=h('input',{type:'text',maxLength:100,placeholder:'Code de salle fourni par l’hôte','aria-label':'Code de salle'});
+      const joinName=h('input',{type:'text',maxLength:40,placeholder:'Votre nom affiché','aria-label':'Nom affiché pour la demande'});
       const ask=h('button',{type:'button',className:'button ghost'},'Envoyer une demande');
-      ask.addEventListener('click',()=>requestJoin(code.value.trim()).catch(showError)); join.append(code,ask);
+      ask.addEventListener('click',()=>requestJoin(code.value.trim(),joinName.value.trim()).catch(showError)); join.append(code,joinName,ask);
       const rooms=h('section'); rooms.id='my-rooms'; rooms.append(h('h3',{},'Mes salles'));
       workspace.append(line,logout,roomBox,join,rooms);
       state.roomsNode=rooms;
@@ -84,10 +85,10 @@ if (!safeConfig) {
       batch.set(dbSdk.doc(db,'rooms',roomId,'members',uid),{uid,role:'host',state:'active',joinedAt:dbSdk.serverTimestamp(),displayName});
       await batch.commit(); say(`Salle créée. Code à partager : ${roomId}. Ce code ne suffit pas à entrer : l’hôte doit approuver les demandes.`);
     }
-    async function requestJoin(roomId){
-      if(!roomId) throw new Error('Saisissez le code de salle.');
+    async function requestJoin(roomId,displayName){
+      if(!roomId||!displayName) throw new Error('Saisissez le code de salle et un nom affiché.');
       const uid=state.user.uid;
-      await dbSdk.setDoc(dbSdk.doc(db,'rooms',roomId,'joinRequests',uid),{uid,state:'pending',createdAt:dbSdk.serverTimestamp(),updatedAt:dbSdk.serverTimestamp()});
+      await dbSdk.setDoc(dbSdk.doc(db,'rooms',roomId,'joinRequests',uid),{uid,displayName,state:'pending',createdAt:dbSdk.serverTimestamp(),updatedAt:dbSdk.serverTimestamp()});
       localStorage.setItem(`lc-pending-${uid}-${roomId}`, 'pending');
       say('Demande transmise. Le code n’accorde pas l’accès; attendez la décision de l’hôte.');
       watchRequest(roomId);
@@ -133,15 +134,15 @@ if (!safeConfig) {
         const offReq=dbSdk.onSnapshot(q,(snap)=>{
           pending.replaceChildren(h('h4',{},'Demandes d’accès'));
           if(!snap.size)pending.append(h('p',{},'Aucune demande en attente.'));
-          snap.forEach((item)=>{const wrap=h('div');const label=h('span',{},`UID ${item.data().uid} `);const yes=h('button',{type:'button',className:'button'},'Accepter');const no=h('button',{type:'button',className:'button ghost'},'Refuser');
-            yes.addEventListener('click',()=>decide(item.id,true).catch(showError));no.addEventListener('click',()=>decide(item.id,false).catch(showError));wrap.append(label,yes,no);pending.append(wrap);});
+          snap.forEach((item)=>{const wrap=h('div');const label=h('span',{},`${item.data().displayName} · UID ${item.data().uid} `);const yes=h('button',{type:'button',className:'button'},'Accepter');const no=h('button',{type:'button',className:'button ghost'},'Refuser');
+            yes.addEventListener('click',()=>decide(item.id,true,item.data().displayName).catch(showError));no.addEventListener('click',()=>decide(item.id,false,item.data().displayName).catch(showError));wrap.append(label,yes,no);pending.append(wrap);});
         },showError);state.cleanups.push(offReq);panel.append(pending);
-        async function decide(uid,accept){const batch=dbSdk.writeBatch(db);const req=dbSdk.doc(db,`rooms/${roomId}/joinRequests/${uid}`);batch.update(req,{state:accept?'approved':'rejected',updatedAt:dbSdk.serverTimestamp()});if(accept)batch.set(dbSdk.doc(db,`rooms/${roomId}/members/${uid}`),{uid,role:'member',state:'active',joinedAt:dbSdk.serverTimestamp(),displayName:'Invité'});await batch.commit();}
+        async function decide(uid,accept,displayName){const batch=dbSdk.writeBatch(db);const req=dbSdk.doc(db,`rooms/${roomId}/joinRequests/${uid}`);batch.update(req,{state:accept?'approved':'rejected',updatedAt:dbSdk.serverTimestamp()});if(accept)batch.set(dbSdk.doc(db,`rooms/${roomId}/members/${uid}`),{uid,role:'member',state:'active',joinedAt:dbSdk.serverTimestamp(),displayName});await batch.commit();}
       }
-      async function sendMessage(){const body=input.value.trim();if(!body)return;const ref=dbSdk.doc(db,`rooms/${roomId}/messages`,crypto.randomUUID());await dbSdk.setDoc(ref,{senderUid:state.user.uid,body,createdAt:dbSdk.serverTimestamp(),schemaVersion:1});input.value='';}
+      async function sendMessage(){const body=input.value.trim();if(!body)return;const ref=dbSdk.doc(db,`rooms/${roomId}/messages`,crypto.randomUUID());await dbSdk.setDoc(ref,{senderUid:state.user.uid,senderName:membership.displayName,body,createdAt:dbSdk.serverTimestamp(),schemaVersion:1});input.value='';}
       send.addEventListener('click',()=>sendMessage().catch(showError));input.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();sendMessage().catch(showError);}});
       const q=dbSdk.query(dbSdk.collection(db,`rooms/${roomId}/messages`),dbSdk.orderBy('createdAt','asc'),dbSdk.limit(100));
-      const off=dbSdk.onSnapshot(q,(snap)=>{messages.replaceChildren();snap.forEach((m)=>{const row=h('article');row.className=m.data().senderUid===state.user.uid?'bubble mine':'bubble';row.append(h('div',{},m.data().body),h('small',{},`${m.data().senderUid} · ${m.data().createdAt?.toDate?.().toLocaleString?.()||'à l’instant'}`));messages.append(row);});messages.scrollTop=messages.scrollHeight;},showError);state.cleanups.push(off);
+      const off=dbSdk.onSnapshot(q,(snap)=>{messages.replaceChildren();snap.forEach((m)=>{const row=h('article');row.className=m.data().senderUid===state.user.uid?'bubble mine':'bubble';row.append(h('strong',{},m.data().senderName),h('div',{},m.data().body),h('small',{},`${m.data().createdAt?.toDate?.().toLocaleString?.()||'à l’instant'}`));messages.append(row);});messages.scrollTop=messages.scrollHeight;},showError);state.cleanups.push(off);
       workspace.replaceChildren(panel);
     }
     $('auth-form').addEventListener('submit',async(event)=>{

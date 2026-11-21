@@ -1,51 +1,48 @@
-# Local Chat — prototype Android
+# Local Chat — prototype Android et banc d’essai web
 
-Application de messagerie locale en développement, écrite en Kotlin avec Jetpack Compose et Google Nearby Connections. Elle permet à des appareils Android proches d’échanger sans connexion Internet, via un téléphone hôte qui relaie les messages.
+Application Android de messagerie locale en développement, écrite en Kotlin avec Jetpack Compose et Google Nearby Connections. Des appareils Android proches échangent sans connexion Internet via un téléphone hôte qui relaie les messages. L’option web expérimentale est séparée et ne change pas le transport Nearby.
 
-## Utilisation prévue
+## Utilisation Android prévue
 
 1. Installer l’application sur des téléphones Android compatibles.
 2. Autoriser les permissions Bluetooth et appareils à proximité (la localisation peut être demandée sur d’anciennes versions d’Android).
-3. Sur un téléphone, enregistrer un pseudo et choisir un nom de salon, puis créer la connexion.
-4. Sur un autre, saisir le même nom de salon, rechercher la connexion, la rejoindre et accepter la demande sur l’hôte.
+3. Sur un téléphone, enregistrer un pseudo, choisir un nom de salon et créer la connexion.
+4. Sur l’autre, saisir le même nom de salon, rechercher la connexion, la rejoindre et accepter la demande sur l’hôte.
 5. L’hôte doit rester à proximité et garder la connexion active.
 
 Une organisation peut être renseignée dans le profil, mais elle est facultative. Le nom du salon est libre.
 
-## État réel et limites
+## État de l’application Android
 
-- Prototype en développement : il n’est ni publié ni prêt pour un déploiement sensible.
-- La CI compile les variantes debug et release. Cela ne remplace pas des essais sur de vrais téléphones ; aucun test appareil n’est revendiqué.
-- La release compilée par la CI n’est pas signée pour distribution.
+- Prototype en développement, non publié et non prêt pour un déploiement sensible.
+- La CI compile les variantes debug et release. Cela ne remplace pas des essais sur de vrais téléphones; aucun test appareil n’est revendiqué ici.
+- La release CI n’est pas signée pour distribution.
 - La connexion Nearby et la reconnexion automatique n’ont pas encore été validées en usage réel.
-- La reconnexion reconnaît actuellement l’hôte par son nom affiché, qui peut être dupliqué ou imité.
-- L’acceptation de la demande n’est pas une authentification forte.
-- Le code facultatif à quatre chiffres est vérifié par défi-réponse HMAC avant l’admission d’un participant et le relais de ses messages. Après un code erroné, l’application permet de réessayer ; trois erreurs ferment la connexion. La reconnexion redemande le code.
-- Le code est conservé dans les préférences locales de l’application. Quatre chiffres sont faciles à deviner ; le mécanisme est une barrière informelle, pas une sécurité forte ni une protection contre un appareil compromis. La fonction est expérimentale et n’a pas été testée sur plusieurs téléphones.
-- L’historique est temporaire et n’est pas sauvegardé durablement.
-- Les messages privés, vocaux et les appels restent à développer.
-- Nearby Connections chiffre les transferts selon la documentation Google, mais cela ne remplace pas l’authentification, les tests de sécurité ni une architecture de production.
-- L’application requiert des services Google Play compatibles.
+- L’acceptation d’une demande n’est pas une authentification forte.
+- Le code facultatif à quatre chiffres est vérifié par défi-réponse HMAC avant admission/relais, mais reste une barrière informelle et n’a pas été testé sur plusieurs téléphones.
+- L’historique est temporaire; messages privés, vocaux et appels restent à développer.
+- Nearby chiffre les transferts selon la documentation Google, sans que cela remplace authentification et tests de sécurité.
+- L’application nécessite des services Google Play compatibles.
 
-## Projet
+## Projet Android
 
-- Identifiant d’application : `cd.localchat.app`.
-- Kotlin/Jetpack Compose ; Android minimum : API 24.
-- Dépendance Nearby Connections : `com.google.android.gms:play-services-nearby:19.3.0` (version déclarée dans le projet).
-- Interface en cours de localisation en français et en anglais selon la langue de l’appareil.
+- Identifiant : `cd.localchat.app`.
+- Kotlin/Jetpack Compose; Android minimum API 24.
+- Nearby Connections `com.google.android.gms:play-services-nearby:19.3.0`.
+- Interface en cours de localisation français/anglais.
 
-Documentation Google : https://developers.google.com/nearby/connections/overview
+Documentation : https://developers.google.com/nearby/connections/overview
 
-## Branche expérimentale hybride (en cours)
+## Expérience web — uniquement émulateurs locaux
 
-Cette branche prépare une future option en ligne sans remplacer le transport Nearby existant. **Nearby reste utilisable sans connexion, compte ni authentification cloud.** Le transport en ligne reste désactivé : Firebase Authentication n’est pas intégré à l’application, aucune lecture/écriture Firestore n’est effectuée par le client et aucun message n’est envoyé vers le cloud. L’historique Nearby reste temporaire et séparé.
+`index.html` et `web-messenger.js` forment un prototype web de test, sans lien avec l’application Android. Il prépare l’inscription/connexion Firebase Auth e-mail/mot de passe, la création atomique salle+hôte, les demandes d’accès avec approbation par l’hôte et les messages texte Firestore. Le client refuse de s’initialiser tant que **Auth et Firestore ne sont pas tous deux explicitement configurés sur localhost**. Les identifiants de l’exemple sont fictifs; des comptes de test doivent être utilisés dans les émulateurs. Le site public Vercel reste la version statique antérieure, non reliée automatiquement à cette branche.
 
-Dans la console Firebase, la méthode e-mail/mot de passe est activée pour préparer une future intégration. L’authentification par téléphone/SMS est désactivée et n’est pas proposée par le contrat Android. Cela ne signifie pas que la connexion e-mail fonctionne dans l’application : aucune interface Firebase, création de compte, connexion, réinitialisation de mot de passe ou session réelle n’est encore implémentée. `CloudAuthContract` est seulement une préparation sans SDK, appel réseau, stockage de mot de passe ou création de compte ; la validation locale ne remplace jamais celle du serveur.
+### Modèle de règles en attente de revue
 
-Le projet reste sur le forfait Firebase Spark sans facturation activée. Spark est un niveau sans coût avec des limites d’utilisation par service : « gratuit » ne signifie pas illimité, et une fonction ou un produit Firebase distinct peut avoir des limites ou exigences de facturation propres. La tarification et les quotas peuvent évoluer ; les vérifier avant toute intégration. Ne pas passer à Blaze, activer une facturation ou un service payant, ni utiliser de SMS. L’e-mail/mot de passe évite les frais d’envoi de SMS, mais ne garantit pas une gratuité illimitée de l’ensemble des services Firebase. Références officielles : [plans et tarification Firebase](https://firebase.google.com/pricing), [documentation Firebase Authentication et limites](https://firebase.google.com/docs/auth).
+`firestore.rules` contient maintenant une proposition candidate pour l’émulateur, avec authentification obligatoire, appariement atomique du salon et de son hôte, adhésion vérifiée, approbation d’accès, schéma à champs limités, messages immuables et révocation. Les tests positifs/négatifs sont dans `tests/firestore.rules.test.js` et s’exécutent avec Firestore Rules Emulator. Les contrôles statiques seuls ne constituent pas un test d’émulateur, navigateur ou production.
 
-Un fichier `firestore.rules` de référence bloque toute lecture et écriture (`allow read, write: if false`). Il est uniquement dans le dépôt : il n’a pas été déployé sur Firebase. Le projet Firebase `local-chat-hybride` conserve ses règles deny-all vérifiées. Ne pas les remplacer ni déployer les règles du dépôt avant d’implémenter une identité fiable, une appartenance explicite à chaque salon, la validation côté serveur des données et des tests positifs/négatifs avec l’émulateur Firebase Rules.
+**Important : les règles candidates ne sont pas déployées.** L’application Firebase distante n’a pas été changée; aucun compte, message ou donnée réelle n’a été créé. Le consentement au stockage Firebase ne vaut pas approbation de règles permissives précises. Ne pas déployer avant revue et accord explicite de l’utilisateur. Le projet doit rester Spark : ne pas activer de facturation, SMS ou service payant.
 
-Ne pas déposer de clé de compte de service, de jeton ou de secret dans le dépôt. Un fichier de configuration Android Firebase ne constitue pas un contrôle d’accès : les règles Firestore doivent protéger chaque document. Aucun abonnement payant ni chiffrement de bout en bout n’est déclaré ou supposé.
+Limites connues avant toute publication publique : pas de contrôle robuste de débit/quota, de modération, de confirmation e-mail, de suppression complète des données ou d’audit indépendant; Firebase Spark peut subir une consommation abusive. Pas de pièces jointes, de chiffrement de bout en bout ou de synchronisation avec Android. Voir `MESSAGERIE_WEB.md` et `FIRESTORE_MEMBERSHIP_SPEC.md` pour les instructions locales, garanties et limites.
 
-État de l’expérimentation : seule une frontière d’architecture hors ligne/en ligne, un contrat SDK-free e-mail/mot de passe et une référence de règles fermées sont présents. L’authentification réelle, la gestion des salons en ligne et la persistance cloud restent à réaliser et tester avant d’activer un mode en ligne.
+Ne jamais déposer de clé de compte de service, jeton, mot de passe ou secret dans le dépôt. Une configuration Web publique ne remplace jamais les règles Firestore ni une sécurité serveur.

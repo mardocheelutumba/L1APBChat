@@ -34,15 +34,18 @@ service cloud.firestore {
         && data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 40;
     }
     function validPendingRequest(data, uid) {
-      return data.keys().hasAll(['uid', 'state', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'state', 'createdAt', 'updatedAt'])
-        && data.uid == uid && data.state == 'pending'
+      return data.keys().hasAll(['uid', 'displayName', 'state', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'state', 'createdAt', 'updatedAt'])
+        && data.uid == uid && data.displayName is string
+        && data.displayName.size() > 0 && data.displayName.size() <= 40
+        && data.state == 'pending'
         && data.createdAt == request.time && data.updatedAt == request.time;
     }
-    function validMessage(data) {
-      return data.keys().hasAll(['senderUid', 'body', 'createdAt', 'schemaVersion'])
-        && data.keys().hasOnly(['senderUid', 'body', 'createdAt', 'schemaVersion'])
+    function validMessage(data, roomId) {
+      return data.keys().hasAll(['senderUid', 'senderName', 'body', 'createdAt', 'schemaVersion'])
+        && data.keys().hasOnly(['senderUid', 'senderName', 'body', 'createdAt', 'schemaVersion'])
         && data.senderUid == request.auth.uid
+        && data.senderName == get(memberPath(roomId, request.auth.uid)).data.displayName
         && data.body is string && data.body.size() > 0 && data.body.size() <= 4000
         && data.createdAt == request.time && data.schemaVersion == 1;
     }
@@ -82,7 +85,8 @@ service cloud.firestore {
               && isHost(roomId)
               && existsAfter(requestPath(roomId, uid))
               && getAfter(requestPath(roomId, uid)).data.uid == uid
-              && getAfter(requestPath(roomId, uid)).data.state == 'approved')
+              && getAfter(requestPath(roomId, uid)).data.state == 'approved'
+              && request.resource.data.displayName == getAfter(requestPath(roomId, uid)).data.displayName)
           );
         // Only the host may revoke a regular member. Role/UID/timestamp are immutable.
         allow update: if isHost(roomId)
@@ -121,7 +125,7 @@ service cloud.firestore {
           && get(roomPath(roomId)).data.state == 'open';
         allow create: if hasActiveMembership(roomId)
           && get(roomPath(roomId)).data.state == 'open'
-          && validMessage(request.resource.data);
+          && validMessage(request.resource.data, roomId);
         // Messages are immutable; edit/delete requires a separately designed moderation flow.
         allow update, delete: if false;
       }

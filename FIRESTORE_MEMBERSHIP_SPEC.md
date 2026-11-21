@@ -18,7 +18,7 @@ Le demandeur authentifié ne peut créer que son propre document avec état `pen
 
 ### `rooms/{roomId}/messages/{messageId}`
 
-Champs permis uniquement : `senderUid`, `body` (1–4 000 caractères), `createdAt` (heure serveur), `schemaVersion` (`1`). Seuls les membres actifs d’une salle ouverte peuvent lire et créer; l’expéditeur doit être l’UID Auth. Modification et suppression client sont refusées. Pas de pièces jointes/URL ni métadonnées.
+Champs permis uniquement : `senderUid`, `senderName` (copié du profil membre, jamais choisi librement dans le message), `body` (1–4 000 caractères), `createdAt` (heure serveur), `schemaVersion` (`1`). Seuls les membres actifs d’une salle ouverte peuvent lire et créer; l’expéditeur doit être l’UID Auth. Modification et suppression client sont refusées. Pas de pièces jointes/URL ni métadonnées.
 
 ## Cas autorisés attendus
 
