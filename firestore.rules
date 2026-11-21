@@ -50,6 +50,12 @@ service cloud.firestore {
         && data.createdAt == request.time && data.schemaVersion == 1;
     }
 
+    // Collection-group queries require a recursive match. This grants only a user's
+    // own membership document; room-scoped host access remains in the match above.
+    match /{path=**}/rooms/{roomId}/members/{uid} {
+      allow get, list: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
     match /rooms/{roomId} {
       // Room and initial host must be created in the same atomic write/batch.
       allow create: if signedIn()
