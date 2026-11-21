@@ -40,7 +40,7 @@ if (!safeConfig) {
     form.querySelectorAll('input,button').forEach((x)=>x.disabled=false);
     const state={ user:null, activeRoom:null, cleanups:[] };
     const clearWatchers=()=>{state.cleanups.splice(0).forEach((off)=>off());};
-    const h=(tag,attrs={},text='')=>{const el=document.createElement(tag);Object.assign(el,attrs);el.textContent=text;return el;};
+    const h=(tag,attrs={},text='')=>{const el=document.createElement(tag);for(const [key,value] of Object.entries(attrs)){if(key.startsWith('aria-')||key.startsWith('data-'))el.setAttribute(key,String(value));else el[key]=value;}el.textContent=text;return el;};
     let workspace=$('chat-workspace');
     if(!workspace){ workspace=h('div',{id:'chat-workspace'}); workspace.className='notice'; form.parentElement.append(workspace); }
     function renderShell() {
