@@ -52,7 +52,7 @@ service cloud.firestore {
 
     // Collection-group queries require a recursive match. This grants only a user's
     // own membership document; room-scoped host access remains in the match above.
-    match /{path=**}/rooms/{roomId}/members/{uid} {
+    match /{path=**}/members/{uid} {
       allow get, list: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
