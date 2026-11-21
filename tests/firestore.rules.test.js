@@ -60,6 +60,7 @@ test('host creates room atomically and discovers it through own membership', asy
   assert.equal(room.data().createdBy, 'host');
   const mine = await assertSucceeds(getDocs(query(collectionGroup(db, 'members'), where('uid', '==', 'host'))));
   assert.equal(mine.size, 1);
+  await assertFails(getDocs(query(collectionGroup(db, 'members'), where('uid', '==', 'someone-else'))));
 });
 
 test('approved member can read room and exchange immutable messages', async () => {
