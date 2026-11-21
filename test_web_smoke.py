@@ -36,4 +36,13 @@ assert 'allow update, delete: if false' in rules
 assert 'Auth Emulator' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8')
 assert 'production' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8').lower()
 assert 'local-config.js' in html and (ROOT/'.gitignore').read_text().find('web/local-config.js')>=0
-print('PASS: HTML and client static checks; auth+chat code is emulator-only; security rules include paired writes; no runtime test claimed.')
+# The bounded pilot is a proposal for local emulators, not production approval.
+pilot=(ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8').lower()
+spec=(ROOT/'FIRESTORE_MEMBERSHIP_SPEC.md').read_text(encoding='utf-8').lower()
+for phrase in ['proposition de pilote fermé', 'émulateurs locaux seulement', 'quatre identités fictives', 'cinquante messages', 'cinq jours', 'aucun pilote cloud', 'n’approuve ni le déploiement']:
+    assert phrase in pilot, f'missing pilot boundary in MESSAGERIE_WEB.md: {phrase}'
+for phrase in ['protocole fermé', 'local uniquement', 'quatre identités fictives', 'cinquante messages', 'suppression', 'aucun essai cloud n’est autorisé']:
+    assert phrase in spec, f'missing safety condition in FIRESTORE_MEMBERSHIP_SPEC.md: {phrase}'
+assert 'firebase deploy' in (ROOT/'MESSAGERIE_WEB.md').read_text(encoding='utf-8')
+assert "branches: [web-messagerie]" in (ROOT/'.github/workflows/web-tests.yml').read_text(encoding='utf-8')
+print('PASS: HTML/client static checks and written local-pilot guardrails; no browser or production runtime test claimed.')
